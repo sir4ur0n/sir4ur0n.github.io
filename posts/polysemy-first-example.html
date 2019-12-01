@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <title>Sir4ur0n's web log - Polysemy - Part II - First example</title>
+  <link rel="stylesheet" type="text/css" href="../css/default.css" />
+</head>
+<body>
+<div id="header">
+  <div id="logo">
+    <a href="../">Sir4ur0n's web log</a>
+  </div>
+  <div id="navigation">
+    <a href="../">Home</a>
+    <a href="../contact.html">Contact</a>
+  </div>
+</div>
+
+<div id="content">
+  <h1>Polysemy - Part II - First example</h1>
+
+  <div class="info">
+    Posted on November 30, 2019
+    
+    <p>
+    
+        This is part of a series on effect handling in Haskell using Polysemy
+    
+    </p>
+</div>
+
+<h2 id="setup">Setup</h2>
+<p>Let’s setup our project as documented in <a href="https://hackage.haskell.org/package/polysemy">Polysemy readme</a> beforehand (instructions are for Stack projects but I’m sure you will easily find the Cabal/Nix equivalent): * Add <code>polysemy</code> and <code>polysemy-plugin</code> to our <code>package.yaml</code> <code>dependencies</code> * Add the following to <code>ghc-options</code>:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1"></a><span class="kw">-</span><span class="at"> -fplugin=Polysemy.Plugin</span></span>
+<span id="cb1-2"><a href="#cb1-2"></a><span class="kw">-</span><span class="at"> -flate-specialise</span></span>
+<span id="cb1-3"><a href="#cb1-3"></a><span class="kw">-</span><span class="at"> -fspecialise-aggressively</span></span></code></pre></div>
+<ul>
+<li>Add the following to <code>default-extensions</code> (we also add <code>TemplateHaskell</code> because we use it to reduce boilerplate):</li>
+</ul>
+<div class="sourceCode" id="cb2"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1"></a><span class="kw">-</span><span class="at"> DataKinds</span></span>
+<span id="cb2-2"><a href="#cb2-2"></a><span class="kw">-</span><span class="at"> FlexibleContexts</span></span>
+<span id="cb2-3"><a href="#cb2-3"></a><span class="kw">-</span><span class="at"> GADTs</span></span>
+<span id="cb2-4"><a href="#cb2-4"></a><span class="kw">-</span><span class="at"> LambdaCase</span></span>
+<span id="cb2-5"><a href="#cb2-5"></a><span class="kw">-</span><span class="at"> PolyKinds</span></span>
+<span id="cb2-6"><a href="#cb2-6"></a><span class="kw">-</span><span class="at"> RankNTypes</span></span>
+<span id="cb2-7"><a href="#cb2-7"></a><span class="kw">-</span><span class="at"> ScopedTypeVariables</span></span>
+<span id="cb2-8"><a href="#cb2-8"></a><span class="kw">-</span><span class="at"> TemplateHaskell</span></span>
+<span id="cb2-9"><a href="#cb2-9"></a><span class="kw">-</span><span class="at"> TypeApplications</span></span>
+<span id="cb2-10"><a href="#cb2-10"></a><span class="kw">-</span><span class="at"> TypeOperators</span></span>
+<span id="cb2-11"><a href="#cb2-11"></a><span class="kw">-</span><span class="at"> TypeFamilies</span></span></code></pre></div>
+<h2 id="logging">Logging</h2>
+<p>A common need in any application is logging. Whether it’s technical logs to keep track of batch start/end (and result), audit logs about who did an admin action, or functional logs about a particular feature being used, it’s useful to find what happened in our beloved applications.</p>
+<p>But logging is an effect! No matter if we send logs to standard output, a log file, or over the network, it has an effect on the world, other than mere processing.</p>
+<p>Of course we could use a good ol’ <code>IO</code> and call it a day, but as explained in the previous post, <code>IO</code> is too coarse, we want more granularity. Instead, let’s create and use a <code>Log</code> effect!</p>
+<h3 id="effect-declaration">Effect declaration</h3>
+<p>Let’s cut to the chase:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb3-1"><a href="#cb3-1"></a><span class="kw">import</span> <span class="dt">Polysemy</span></span>
+<span id="cb3-2"><a href="#cb3-2"></a></span>
+<span id="cb3-3"><a href="#cb3-3"></a><span class="kw">data</span> <span class="dt">Log</span> m a <span class="kw">where</span></span>
+<span id="cb3-4"><a href="#cb3-4"></a>  <span class="dt">LogInfo</span><span class="ot"> ::</span> <span class="dt">String</span> <span class="ot">-&gt;</span> <span class="dt">Log</span> m ()</span>
+<span id="cb3-5"><a href="#cb3-5"></a></span>
+<span id="cb3-6"><a href="#cb3-6"></a>makeSem '<span class="dt">'Log</span></span></code></pre></div>
+<p>This is pretty dense already, let’s analyze bit by bit what’s going on!</p>
+<p><code>data Log m a</code> is our effect. * <code>Log</code> is the effect name. This is the part that will appear in all our function signatures. Better pick a name that’s descriptive (and ideally not verbose) of the effect! * <code>m</code> must always be there (you can guess the <code>m</code> stands for <code>Monad</code> but you don’t really need to know what it’s used for) * <code>()</code> is the return type of the action. A logging action returns nothing, so we stick to Unit (<code>()</code>)</p>
+<p><code>LogInfo :: String -&gt; Log m ()</code> is a possible <strong>action</strong> that has the <code>Log</code> effect. As you may have guessed, it is an action that takes a <code>String</code> to log, and will log it! Note we can have several actions under the same effect, but let’s start with one.</p>
+<p><code>makeSem ''Log</code> uses Template Haskell to create the <code>logInfo</code> function (same name as the action, but with the first letter changed to lowercase). We do not <em>technically</em> need this, but it saves us writing uninteresting boilerplate, so let’s stick with it.</p>
+<p>In case you are curious, let’s check the type of this <code>logInfo</code> function:</p>
+<pre><code>&gt; :t logInfo
+
+logInfo :: (IfStuck (IndexOf r (Found r Log)) (IfStuck r (TypeError ...) (Pure (TypeError ...))) NoErrorFcf, Find r Log, IndexOf r (Found r Log) ~ Log) =&gt; String -&gt; Sem r ()</code></pre>
+<p>You know what? Let’s pretend we never saw that. We don’t actually need to understand this to use it.</p>
+<p>And that’s it! We have declared our logging effect. Remember, with effects, we split effect declaration and effect interpretation. This piece of code in no way explains <strong>how</strong> one should log. That is the whole point!</p>
+<h3 id="effect-use">Effect use</h3>
+<p>Now that we have created our logging effect, let’s use it in our business code! Let’s say we currently have this piece of code:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb5-1"><a href="#cb5-1"></a><span class="ot">myBusinessFunction ::</span> <span class="dt">Integer</span> <span class="ot">-&gt;</span> <span class="dt">Integer</span> <span class="ot">-&gt;</span> <span class="dt">IO</span> <span class="dt">Integer</span></span>
+<span id="cb5-2"><a href="#cb5-2"></a>myBusinessFunction m n <span class="ot">=</span> <span class="kw">do</span></span>
+<span id="cb5-3"><a href="#cb5-3"></a>  <span class="fu">putStrLn</span> <span class="op">$</span> <span class="st">&quot;myBusinessFunction was called with parameters &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> m <span class="op">&lt;&gt;</span> <span class="st">&quot; and &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> n</span>
+<span id="cb5-4"><a href="#cb5-4"></a>  <span class="kw">let</span> result <span class="ot">=</span> m <span class="op">+</span> n</span>
+<span id="cb5-5"><a href="#cb5-5"></a>  <span class="fu">putStrLn</span> <span class="op">$</span> <span class="st">&quot;myBusinessFunction result is &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> result</span>
+<span id="cb5-6"><a href="#cb5-6"></a>  <span class="fu">return</span> result</span></code></pre></div>
+<p><code>IO</code> is too coarse, we want to replace its use with our shiny new effect. Fear not, my friend, this is as simple as:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb6-1"><a href="#cb6-1"></a><span class="ot">myBusinessFunction ::</span> <span class="dt">Member</span> <span class="dt">Log</span> r <span class="ot">=&gt;</span> <span class="dt">Integer</span> <span class="ot">-&gt;</span> <span class="dt">Integer</span> <span class="ot">-&gt;</span> <span class="dt">Sem</span> r <span class="dt">Integer</span></span>
+<span id="cb6-2"><a href="#cb6-2"></a>myBusinessFunction m n <span class="ot">=</span> <span class="kw">do</span></span>
+<span id="cb6-3"><a href="#cb6-3"></a>  logInfo <span class="op">$</span> <span class="st">&quot;myBusinessFunction was called with parameters &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> m <span class="op">&lt;&gt;</span> <span class="st">&quot; and &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> n</span>
+<span id="cb6-4"><a href="#cb6-4"></a>  <span class="kw">let</span> result <span class="ot">=</span> m <span class="op">+</span> n</span>
+<span id="cb6-5"><a href="#cb6-5"></a>  logInfo <span class="op">$</span> <span class="st">&quot;myBusinessFunction result is &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> result</span>
+<span id="cb6-6"><a href="#cb6-6"></a>  <span class="fu">return</span> result</span></code></pre></div>
+<p>The main changes are: * the constraint <code>Member Log r</code> which tells that <code>r</code> must have <strong>at least</strong> the <code>Log</code> effect (because we will use it in our implementation) * the return type <code>Sem r Integer</code> which you can read as “A Polysemy monad with the list of effects <code>r</code> and which returns an <code>Integer</code>”. And the only thing we know (and we need to know) is that <code>r</code> has the <code>Log</code> effect. It may very well have a thousand other effects, or none, we don’t care in this business code. We declare the <strong>needed</strong> effects, not the <strong>exhaustive list</strong> of effects * the use of <code>logInfo</code> (remember? It was generated thanks to <code>makeSem ''Log</code> in the effect declaration) to actually log stuff</p>
+<p>This piece of code is much better. Now our business code better expresses its effects in the type signature (it logs, and cannot do anything else!), no longer has hardcoded the implementation (<code>putStrLn</code>), and we haven’t added any complexity to our code.</p>
+<p>Now you might wonder “This is great, but at some point, somebody’s gotta do the actual logging with <code>putStrLn</code>!”.</p>
+<h3 id="effect-interpretation">Effect interpretation</h3>
+<p>This is where the real world catches on us. It’s time to explain how the <code>Log</code> effect must be interpreted in terms of <code>putStrLn</code>. Say the previous business code was consumed as such:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb7-1"><a href="#cb7-1"></a><span class="ot">main ::</span> <span class="dt">IO</span> ()</span>
+<span id="cb7-2"><a href="#cb7-2"></a>main <span class="ot">=</span> <span class="kw">do</span></span>
+<span id="cb7-3"><a href="#cb7-3"></a>  m <span class="ot">&lt;- readLn ::</span> <span class="dt">IO</span> <span class="dt">Integer</span></span>
+<span id="cb7-4"><a href="#cb7-4"></a>  n <span class="ot">&lt;- readLn ::</span> <span class="dt">IO</span> <span class="dt">Integer</span></span>
+<span id="cb7-5"><a href="#cb7-5"></a>  result <span class="ot">&lt;-</span> myBusinessFunction m n</span>
+<span id="cb7-6"><a href="#cb7-6"></a>  <span class="fu">putStrLn</span> <span class="op">$</span> <span class="st">&quot;The business result is &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> result</span></code></pre></div>
+<p>After the changes we did to <code>myBusinessFunction</code> this code no longer compiles, because <code>myBusinessFunction</code> works in the <code>Sem</code> monad while <code>main</code> works in the <code>IO</code> monad.</p>
+<p>First, let’s write a function to interpret the <code>Log</code> effect in terms of <code>IO</code>:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb8-1"><a href="#cb8-1"></a><span class="ot">logToIO ::</span> <span class="dt">Member</span> (<span class="dt">Embed</span> <span class="dt">IO</span>) r <span class="ot">=&gt;</span> <span class="dt">Sem</span> (<span class="dt">Log</span> '<span class="op">:</span> r) a <span class="ot">-&gt;</span> <span class="dt">Sem</span> r a</span>
+<span id="cb8-2"><a href="#cb8-2"></a>logToIO <span class="ot">=</span> interpret (\(<span class="dt">LogInfo</span> stringToLog) <span class="ot">-&gt;</span> embed <span class="op">$</span> <span class="fu">putStrLn</span> stringToLog)</span></code></pre></div>
+<p>There’s a lot going on! Don’t panic, as impressive as it may look the first time, you will soon get used to it.</p>
+<ul>
+<li>the <code>Member (Embed IO) r</code> constraint means <code>r</code> must have the ability to do <code>IO</code>. Ideally we would write <code>Member IO r</code> but since <code>IO</code> is not a Polysemy effect, we need to wrap it as an effect thanks to <code>Embed</code>. Note we require the <code>IO</code> effect because we want our main application to log using <code>putStrLn</code>. In our tests, we will write another interpreter with a pure function, thus we will not need to require the <code>IO</code> effect</li>
+<li>the <code>Sem (Log ': r) a -&gt; Sem r a</code> type signature can be read as “I take a <code>Sem</code> monad which has any effect <strong>and the <code>Log</code> effect</strong>, and return the same <code>Sem</code> monad without that <code>Log</code> effect”, effectively meaning we are interpreting (destroying/consuming) the <code>Log</code> effect. Note, in more recent versions of <code>Polysemy</code> (unfortunately not yet available on Stackage), this type signature can be replaced with <code>InterpreterFor Log r</code>, which makes the function intention even clearer!</li>
+<li>note that the implementation does not explicitly mention the input argument (called <a href="https://wiki.haskell.org/Pointfree">pointfree style</a>), this is how interpreters usually look</li>
+<li><code>interpret</code> means what follows will be an interpreter</li>
+<li>since all we know about <code>r</code> is that it has the <code>Log</code> effect, we need to interpret only its actions (<code>LogInfo</code>)</li>
+<li>the <code>(LogInfo stringToLog)</code> pattern matching lets us capture the string to log when the action to interpret is <code>LogInfo</code></li>
+<li><code>putStrLn stringToLog</code> is the actual logging, however since its type is <code>IO ()</code>, we need to wrap it back into our <code>Sem</code> monad, thanks to <code>embed</code></li>
+</ul>
+<p>Again, this usually is the toughest part to grasp. Don’t worry if it takes time to sink in. Wash, rinse, repeat.</p>
+<p>Now we are able to convert a <code>Sem</code> monad with the <code>Log</code> effect to a <code>Sem</code> monad with the <code>Embed IO</code> effect. The last piece of the puzzle we need is to convert a <code>Sem</code> monad with <code>IO</code> to a good ol’ <code>IO</code>. Thankfully Polysemy already provides such a function, namely <code>runM</code>.</p>
+<p>Let’s head back to our <code>main</code> function and explain to the compiler (and the reader) how one is supposed to interpret those hippie effects back into motherland <code>IO</code>:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb9-1"><a href="#cb9-1"></a><span class="ot">main ::</span> <span class="dt">IO</span> ()</span>
+<span id="cb9-2"><a href="#cb9-2"></a>main <span class="ot">=</span> <span class="kw">do</span></span>
+<span id="cb9-3"><a href="#cb9-3"></a>  m <span class="ot">&lt;- readLn ::</span> <span class="dt">IO</span> <span class="dt">Integer</span></span>
+<span id="cb9-4"><a href="#cb9-4"></a>  n <span class="ot">&lt;- readLn ::</span> <span class="dt">IO</span> <span class="dt">Integer</span></span>
+<span id="cb9-5"><a href="#cb9-5"></a>  result <span class="ot">&lt;-</span> runM <span class="op">.</span> logToIO <span class="op">$</span> myBusinessFunction m n</span>
+<span id="cb9-6"><a href="#cb9-6"></a>  <span class="fu">putStrLn</span> <span class="op">$</span> <span class="st">&quot;The business result is &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> result</span></code></pre></div>
+<p>Well, that was simple.</p>
+<p>That’s it, our code was successfully migrated from monolithic effect <code>IO</code> to fine-grained <code>Log</code> effect! The additional noise is negligible and the benefit is already interesting, but the benefits increase tenfold in “real” applications with several effects, several actions per effect, several business functions calling each other, reinterpretations, and tests.</p>
+<p>In the next post, we will see how to write tests for business functions with Polysemy effects. Stay tuned!</p>
+<p>Full code:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb10-1"><a href="#cb10-1"></a><span class="kw">import</span> <span class="dt">Polysemy</span></span>
+<span id="cb10-2"><a href="#cb10-2"></a></span>
+<span id="cb10-3"><a href="#cb10-3"></a><span class="kw">data</span> <span class="dt">Log</span> m a <span class="kw">where</span></span>
+<span id="cb10-4"><a href="#cb10-4"></a>  <span class="dt">LogInfo</span><span class="ot"> ::</span> <span class="dt">String</span> <span class="ot">-&gt;</span> <span class="dt">Log</span> m ()</span>
+<span id="cb10-5"><a href="#cb10-5"></a></span>
+<span id="cb10-6"><a href="#cb10-6"></a>makeSem '<span class="dt">'Log</span></span>
+<span id="cb10-7"><a href="#cb10-7"></a></span>
+<span id="cb10-8"><a href="#cb10-8"></a><span class="ot">main ::</span> <span class="dt">IO</span> ()</span>
+<span id="cb10-9"><a href="#cb10-9"></a>main <span class="ot">=</span> <span class="kw">do</span></span>
+<span id="cb10-10"><a href="#cb10-10"></a>  m <span class="ot">&lt;- readLn ::</span> <span class="dt">IO</span> <span class="dt">Integer</span></span>
+<span id="cb10-11"><a href="#cb10-11"></a>  n <span class="ot">&lt;- readLn ::</span> <span class="dt">IO</span> <span class="dt">Integer</span></span>
+<span id="cb10-12"><a href="#cb10-12"></a>  result <span class="ot">&lt;-</span> runM <span class="op">.</span> logToIO <span class="op">$</span> myBusinessFunction m n</span>
+<span id="cb10-13"><a href="#cb10-13"></a>  <span class="fu">putStrLn</span> <span class="op">$</span> <span class="st">&quot;The business result is &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> result</span>
+<span id="cb10-14"><a href="#cb10-14"></a></span>
+<span id="cb10-15"><a href="#cb10-15"></a><span class="ot">myBusinessFunction ::</span> <span class="dt">Member</span> <span class="dt">Log</span> r <span class="ot">=&gt;</span> <span class="dt">Integer</span> <span class="ot">-&gt;</span> <span class="dt">Integer</span> <span class="ot">-&gt;</span> <span class="dt">Sem</span> r <span class="dt">Integer</span></span>
+<span id="cb10-16"><a href="#cb10-16"></a>myBusinessFunction m n <span class="ot">=</span> <span class="kw">do</span></span>
+<span id="cb10-17"><a href="#cb10-17"></a>  logInfo <span class="op">$</span> <span class="st">&quot;myBusinessFunction was called with parameters &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> m <span class="op">&lt;&gt;</span> <span class="st">&quot; and &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> n</span>
+<span id="cb10-18"><a href="#cb10-18"></a>  <span class="kw">let</span> result <span class="ot">=</span> m <span class="op">+</span> n</span>
+<span id="cb10-19"><a href="#cb10-19"></a>  logInfo <span class="op">$</span> <span class="st">&quot;myBusinessFunction result is &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> result</span>
+<span id="cb10-20"><a href="#cb10-20"></a>  <span class="fu">return</span> result</span>
+<span id="cb10-21"><a href="#cb10-21"></a></span>
+<span id="cb10-22"><a href="#cb10-22"></a><span class="ot">logToIO ::</span> <span class="dt">Member</span> (<span class="dt">Embed</span> <span class="dt">IO</span>) r <span class="ot">=&gt;</span> <span class="dt">Sem</span> (<span class="dt">Log</span> '<span class="op">:</span> r) a <span class="ot">-&gt;</span> <span class="dt">Sem</span> r a</span>
+<span id="cb10-23"><a href="#cb10-23"></a>logToIO <span class="ot">=</span> interpret (\(<span class="dt">LogInfo</span> stringToLog) <span class="ot">-&gt;</span> embed <span class="op">$</span> <span class="fu">putStrLn</span> stringToLog)</span></code></pre></div>
+
+</div>
+<div id="footer">
+  Site proudly generated by
+  <a href="http://jaspervdj.be/hakyll">Hakyll</a>
+</div>
+</body>
+</html>
