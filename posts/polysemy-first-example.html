@@ -32,7 +32,11 @@
 </div>
 
 <h2 id="setup">Setup</h2>
-<p>Let’s setup our project as documented in <a href="https://hackage.haskell.org/package/polysemy">Polysemy readme</a> beforehand (instructions are for Stack projects but I’m sure you will easily find the Cabal/Nix equivalent): * Add <code>polysemy</code> and <code>polysemy-plugin</code> to our <code>package.yaml</code> <code>dependencies</code> * Add the following to <code>ghc-options</code>:</p>
+<p>Let’s setup our project as documented in <a href="https://hackage.haskell.org/package/polysemy">Polysemy readme</a> beforehand (instructions are for Stack projects but I’m sure you will easily find the Cabal/Nix equivalent):</p>
+<ul>
+<li>Add <code>polysemy</code> and <code>polysemy-plugin</code> to our <code>package.yaml</code> <code>dependencies</code></li>
+<li>Add the following to <code>ghc-options</code>:</li>
+</ul>
 <div class="sourceCode" id="cb1"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1"></a><span class="kw">-</span><span class="at"> -fplugin=Polysemy.Plugin</span></span>
 <span id="cb1-2"><a href="#cb1-2"></a><span class="kw">-</span><span class="at"> -flate-specialise</span></span>
 <span id="cb1-3"><a href="#cb1-3"></a><span class="kw">-</span><span class="at"> -fspecialise-aggressively</span></span></code></pre></div>
@@ -63,7 +67,12 @@
 <span id="cb3-5"><a href="#cb3-5"></a></span>
 <span id="cb3-6"><a href="#cb3-6"></a>makeSem '<span class="dt">'Log</span></span></code></pre></div>
 <p>This is pretty dense already, let’s analyze bit by bit what’s going on!</p>
-<p><code>data Log m a</code> is our effect. * <code>Log</code> is the effect name. This is the part that will appear in all our function signatures. Better pick a name that’s descriptive (and ideally not verbose) of the effect! * <code>m</code> must always be there (you can guess the <code>m</code> stands for <code>Monad</code> but you don’t really need to know what it’s used for) * <code>()</code> is the return type of the action. A logging action returns nothing, so we stick to Unit (<code>()</code>)</p>
+<p><code>data Log m a</code> is our effect.</p>
+<ul>
+<li><code>Log</code> is the effect name. This is the part that will appear in all our function signatures. Better pick a name that’s descriptive (and ideally not verbose) of the effect!</li>
+<li><code>m</code> must always be there (you can guess the <code>m</code> stands for <code>Monad</code> but you don’t really need to know what it’s used for)</li>
+<li><code>()</code> is the return type of the action. A logging action returns nothing, so we stick to Unit (<code>()</code>)</li>
+</ul>
 <p><code>LogInfo :: String -&gt; Log m ()</code> is a possible <strong>action</strong> that has the <code>Log</code> effect. As you may have guessed, it is an action that takes a <code>String</code> to log, and will log it! Note we can have several actions under the same effect, but let’s start with one.</p>
 <p><code>makeSem ''Log</code> uses Template Haskell to create the <code>logInfo</code> function (same name as the action, but with the first letter changed to lowercase). We do not <em>technically</em> need this, but it saves us writing uninteresting boilerplate, so let’s stick with it.</p>
 <p>In case you are curious, let’s check the type of this <code>logInfo</code> function:</p>
@@ -87,7 +96,12 @@ logInfo :: (IfStuck (IndexOf r (Found r Log)) (IfStuck r (TypeError ...) (Pure (
 <span id="cb6-4"><a href="#cb6-4"></a>  <span class="kw">let</span> result <span class="ot">=</span> m <span class="op">+</span> n</span>
 <span id="cb6-5"><a href="#cb6-5"></a>  logInfo <span class="op">$</span> <span class="st">&quot;myBusinessFunction result is &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> result</span>
 <span id="cb6-6"><a href="#cb6-6"></a>  <span class="fu">return</span> result</span></code></pre></div>
-<p>The main changes are: * the constraint <code>Member Log r</code> which tells that <code>r</code> must have <strong>at least</strong> the <code>Log</code> effect (because we will use it in our implementation) * the return type <code>Sem r Integer</code> which you can read as “A Polysemy monad with the list of effects <code>r</code> and which returns an <code>Integer</code>”. And the only thing we know (and we need to know) is that <code>r</code> has the <code>Log</code> effect. It may very well have a thousand other effects, or none, we don’t care in this business code. We declare the <strong>needed</strong> effects, not the <strong>exhaustive list</strong> of effects * the use of <code>logInfo</code> (remember? It was generated thanks to <code>makeSem ''Log</code> in the effect declaration) to actually log stuff</p>
+<p>The main changes are:</p>
+<ul>
+<li>the constraint <code>Member Log r</code> which tells that <code>r</code> must have <strong>at least</strong> the <code>Log</code> effect (because we will use it in our implementation)</li>
+<li>the return type <code>Sem r Integer</code> which you can read as “A Polysemy monad with the list of effects <code>r</code> and which returns an <code>Integer</code>”. And the only thing we know (and we need to know) is that <code>r</code> has the <code>Log</code> effect. It may very well have a thousand other effects, or none, we don’t care in this business code. We declare the <strong>needed</strong> effects, not the <strong>exhaustive list</strong> of effects</li>
+<li>the use of <code>logInfo</code> (remember? It was generated thanks to <code>makeSem ''Log</code> in the effect declaration) to actually log stuff</li>
+</ul>
 <p>This piece of code is much better. Now our business code better expresses its effects in the type signature (it logs, and cannot do anything else!), no longer has hardcoded the implementation (<code>putStrLn</code>), and we haven’t added any complexity to our code.</p>
 <p>Now you might wonder “This is great, but at some point, somebody’s gotta do the actual logging with <code>putStrLn</code>!”.</p>
 <h3 id="effect-interpretation">Effect interpretation</h3>
