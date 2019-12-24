@@ -88,17 +88,19 @@ MemberWithError Log r =&gt; Text -&gt; Sem r ()</code></pre>
 <p>Now that we have created our logging effect, let’s use it in our business code! Let’s say we currently have this piece of code:</p>
 <div class="sourceCode" id="cb6"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb6-1"><a href="#cb6-1"></a><span class="ot">myBusinessFunction ::</span> <span class="dt">Integer</span> <span class="ot">-&gt;</span> <span class="dt">Integer</span> <span class="ot">-&gt;</span> <span class="dt">IO</span> <span class="dt">Integer</span></span>
 <span id="cb6-2"><a href="#cb6-2"></a>myBusinessFunction m n <span class="ot">=</span> <span class="kw">do</span></span>
-<span id="cb6-3"><a href="#cb6-3"></a>  <span class="fu">putStrLn</span> <span class="op">$</span> <span class="st">&quot;myBusinessFunction was called with parameters &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> m <span class="op">&lt;&gt;</span> <span class="st">&quot; and &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> n</span>
-<span id="cb6-4"><a href="#cb6-4"></a>  <span class="kw">let</span> result <span class="ot">=</span> m <span class="op">+</span> n</span>
-<span id="cb6-5"><a href="#cb6-5"></a>  <span class="fu">putStrLn</span> <span class="op">$</span> <span class="st">&quot;myBusinessFunction result is &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> result</span>
-<span id="cb6-6"><a href="#cb6-6"></a>  <span class="fu">return</span> result</span></code></pre></div>
+<span id="cb6-3"><a href="#cb6-3"></a>  <span class="fu">putStrLn</span> <span class="op">$</span> <span class="st">&quot;myBusinessFunction was called with parameters &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> m <span class="op">&lt;&gt;</span> </span>
+<span id="cb6-4"><a href="#cb6-4"></a>             <span class="st">&quot; and &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> n</span>
+<span id="cb6-5"><a href="#cb6-5"></a>  <span class="kw">let</span> result <span class="ot">=</span> m <span class="op">+</span> n</span>
+<span id="cb6-6"><a href="#cb6-6"></a>  <span class="fu">putStrLn</span> <span class="op">$</span> <span class="st">&quot;myBusinessFunction result is &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> result</span>
+<span id="cb6-7"><a href="#cb6-7"></a>  <span class="fu">return</span> result</span></code></pre></div>
 <p><code>IO</code> is too coarse, we want to replace its use with our shiny new effect. Fear not, my friend, this is as simple as:</p>
 <div class="sourceCode" id="cb7"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb7-1"><a href="#cb7-1"></a><span class="ot">myBusinessFunction ::</span> <span class="dt">Member</span> <span class="dt">Log</span> r <span class="ot">=&gt;</span> <span class="dt">Integer</span> <span class="ot">-&gt;</span> <span class="dt">Integer</span> <span class="ot">-&gt;</span> <span class="dt">Sem</span> r <span class="dt">Integer</span></span>
 <span id="cb7-2"><a href="#cb7-2"></a>myBusinessFunction m n <span class="ot">=</span> <span class="kw">do</span></span>
-<span id="cb7-3"><a href="#cb7-3"></a>  logInfo <span class="op">$</span> <span class="st">&quot;myBusinessFunction was called with parameters &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> m <span class="op">&lt;&gt;</span> <span class="st">&quot; and &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> n</span>
-<span id="cb7-4"><a href="#cb7-4"></a>  <span class="kw">let</span> result <span class="ot">=</span> m <span class="op">+</span> n</span>
-<span id="cb7-5"><a href="#cb7-5"></a>  logInfo <span class="op">$</span> <span class="st">&quot;myBusinessFunction result is &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> result</span>
-<span id="cb7-6"><a href="#cb7-6"></a>  <span class="fu">return</span> result</span></code></pre></div>
+<span id="cb7-3"><a href="#cb7-3"></a>  logInfo <span class="op">$</span> <span class="st">&quot;myBusinessFunction was called with parameters &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> m <span class="op">&lt;&gt;</span> </span>
+<span id="cb7-4"><a href="#cb7-4"></a>            <span class="st">&quot; and &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> n</span>
+<span id="cb7-5"><a href="#cb7-5"></a>  <span class="kw">let</span> result <span class="ot">=</span> m <span class="op">+</span> n</span>
+<span id="cb7-6"><a href="#cb7-6"></a>  logInfo <span class="op">$</span> <span class="st">&quot;myBusinessFunction result is &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> result</span>
+<span id="cb7-7"><a href="#cb7-7"></a>  <span class="fu">return</span> result</span></code></pre></div>
 <p>The main changes are:</p>
 <ul>
 <li>the constraint <code>Member Log r</code> which tells that <code>r</code> must have <strong>at least</strong> the <code>Log</code> effect (because we will use it in our implementation)</li>
@@ -157,13 +159,14 @@ MemberWithError Log r =&gt; Text -&gt; Sem r ()</code></pre>
 <span id="cb11-14"><a href="#cb11-14"></a></span>
 <span id="cb11-15"><a href="#cb11-15"></a><span class="ot">myBusinessFunction ::</span> <span class="dt">Member</span> <span class="dt">Log</span> r <span class="ot">=&gt;</span> <span class="dt">Integer</span> <span class="ot">-&gt;</span> <span class="dt">Integer</span> <span class="ot">-&gt;</span> <span class="dt">Sem</span> r <span class="dt">Integer</span></span>
 <span id="cb11-16"><a href="#cb11-16"></a>myBusinessFunction m n <span class="ot">=</span> <span class="kw">do</span></span>
-<span id="cb11-17"><a href="#cb11-17"></a>  logInfo <span class="op">$</span> <span class="st">&quot;myBusinessFunction was called with parameters &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> m <span class="op">&lt;&gt;</span> <span class="st">&quot; and &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> n</span>
-<span id="cb11-18"><a href="#cb11-18"></a>  <span class="kw">let</span> result <span class="ot">=</span> m <span class="op">+</span> n</span>
-<span id="cb11-19"><a href="#cb11-19"></a>  logInfo <span class="op">$</span> <span class="st">&quot;myBusinessFunction result is &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> result</span>
-<span id="cb11-20"><a href="#cb11-20"></a>  <span class="fu">return</span> result</span>
-<span id="cb11-21"><a href="#cb11-21"></a></span>
-<span id="cb11-22"><a href="#cb11-22"></a><span class="ot">logToIO ::</span> <span class="dt">Member</span> (<span class="dt">Embed</span> <span class="dt">IO</span>) r <span class="ot">=&gt;</span> <span class="dt">Sem</span> (<span class="dt">Log</span> '<span class="op">:</span> r) a <span class="ot">-&gt;</span> <span class="dt">Sem</span> r a</span>
-<span id="cb11-23"><a href="#cb11-23"></a>logToIO <span class="ot">=</span> interpret (\(<span class="dt">LogInfo</span> stringToLog) <span class="ot">-&gt;</span> embed <span class="op">$</span> <span class="fu">putStrLn</span> stringToLog)</span></code></pre></div>
+<span id="cb11-17"><a href="#cb11-17"></a>  logInfo <span class="op">$</span> <span class="st">&quot;myBusinessFunction was called with parameters &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> m <span class="op">&lt;&gt;</span> </span>
+<span id="cb11-18"><a href="#cb11-18"></a>            <span class="st">&quot; and &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> n</span>
+<span id="cb11-19"><a href="#cb11-19"></a>  <span class="kw">let</span> result <span class="ot">=</span> m <span class="op">+</span> n</span>
+<span id="cb11-20"><a href="#cb11-20"></a>  logInfo <span class="op">$</span> <span class="st">&quot;myBusinessFunction result is &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> result</span>
+<span id="cb11-21"><a href="#cb11-21"></a>  <span class="fu">return</span> result</span>
+<span id="cb11-22"><a href="#cb11-22"></a></span>
+<span id="cb11-23"><a href="#cb11-23"></a><span class="ot">logToIO ::</span> <span class="dt">Member</span> (<span class="dt">Embed</span> <span class="dt">IO</span>) r <span class="ot">=&gt;</span> <span class="dt">Sem</span> (<span class="dt">Log</span> '<span class="op">:</span> r) a <span class="ot">-&gt;</span> <span class="dt">Sem</span> r a</span>
+<span id="cb11-24"><a href="#cb11-24"></a>logToIO <span class="ot">=</span> interpret (\(<span class="dt">LogInfo</span> stringToLog) <span class="ot">-&gt;</span> embed <span class="op">$</span> <span class="fu">putStrLn</span> stringToLog)</span></code></pre></div>
 
 </div>
 <div id="footer">
