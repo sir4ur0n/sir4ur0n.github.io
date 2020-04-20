@@ -132,6 +132,7 @@ Cases: 1  Tried: 1  Errors: 0  Failures: 0</code></pre>
 <span id="cb8-18"><a href="#cb8-18"></a>    <span class="fu">last</span> logsAB_then_C <span class="op">==</span> <span class="fu">last</span> logsA_then_BC <span class="op">&amp;&amp;</span> resultAB_then_C <span class="op">==</span> resultA_then_BC</span></code></pre></div>
 <p>This first example showed how to change the interpreter to mock/record the effect behavior, but a major part of mocking effects is to return a dummy value instead of executing the effect to retrieve the value (e.g. database access or environment variable).</p>
 <p>I think it’s interesting to showcase another example where the effect action has a return value other than <code>()</code>.</p>
+<p>You can find the full code example on <a href="https://github.com/Sir4ur0n/blog/tree/master/code-examples/src/PolysemyTestsLogging">my Github repo</a>.</p>
 <h2 id="intermediary-example-environment-variables">Intermediary example: environment variables</h2>
 <p>Let’s consider the use case of enviroment variable access.</p>
 <p>Many applications need to read some global configuration, often passed by Kubernetes/Rancher through environment variables or secret files. A database URL, the logging level, a port number, an API key, you name it.</p>
@@ -187,6 +188,7 @@ Cases: 1  Tried: 1  Errors: 0  Failures: 0</code></pre>
 <span id="cb13-15"><a href="#cb13-15"></a>  <span class="kw">in</span> </span>
 <span id="cb13-16"><a href="#cb13-16"></a>    result <span class="op">@?=</span> <span class="dt">Right</span> <span class="dv">400</span></span></code></pre></div>
 <p>As you can see, each test provides the mocking function <code>mockLookupEnv</code> which is then injected in the interpreter.</p>
+<p>You can find the full code example on <a href="https://github.com/Sir4ur0n/blog/tree/master/code-examples/src/PolysemyTestsConfiguration">my Github repo</a>.</p>
 <h2 id="conclusion">Conclusion</h2>
 <p>As shown in this post, testing (by mocking) is nice and inexpensive in Haskell with an effect framework like Polysemy.</p>
 <p>The separation between effect declaration, effect use and effect interpretation is a big plus: tests only need to change the interpreter to mock effects, all other things remaining equal.</p>

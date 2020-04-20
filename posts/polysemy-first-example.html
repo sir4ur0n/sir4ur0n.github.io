@@ -142,31 +142,7 @@ MemberWithError Log r =&gt; Text -&gt; Sem r ()</code></pre>
 <span id="cb10-6"><a href="#cb10-6"></a>  <span class="fu">putStrLn</span> <span class="op">$</span> <span class="st">&quot;The business result is &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> result</span></code></pre></div>
 <p>That’s it, our code was successfully migrated from monolithic effect <code>IO</code> to fine-grained <code>Log</code> effect! The additional noise is negligible and the benefit is already interesting, but the benefits increase tenfold in “real” applications with several effects, several actions per effect, several business functions calling each other, reinterpretations, and tests.</p>
 <p>In <a href="polysemy-tests.html">my next blog post</a>, I explain how to write tests for business functions with Polysemy effects.</p>
-<p>Full code:</p>
-<div class="sourceCode" id="cb11"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb11-1"><a href="#cb11-1"></a><span class="kw">import</span> <span class="dt">Polysemy</span></span>
-<span id="cb11-2"><a href="#cb11-2"></a></span>
-<span id="cb11-3"><a href="#cb11-3"></a><span class="kw">data</span> <span class="dt">Log</span> m a <span class="kw">where</span></span>
-<span id="cb11-4"><a href="#cb11-4"></a>  <span class="dt">LogInfo</span><span class="ot"> ::</span> <span class="dt">String</span> <span class="ot">-&gt;</span> <span class="dt">Log</span> m ()</span>
-<span id="cb11-5"><a href="#cb11-5"></a></span>
-<span id="cb11-6"><a href="#cb11-6"></a>makeSem '<span class="dt">'Log</span></span>
-<span id="cb11-7"><a href="#cb11-7"></a></span>
-<span id="cb11-8"><a href="#cb11-8"></a><span class="ot">main ::</span> <span class="dt">IO</span> ()</span>
-<span id="cb11-9"><a href="#cb11-9"></a>main <span class="ot">=</span> <span class="kw">do</span></span>
-<span id="cb11-10"><a href="#cb11-10"></a>  m <span class="ot">&lt;- readLn ::</span> <span class="dt">IO</span> <span class="dt">Integer</span></span>
-<span id="cb11-11"><a href="#cb11-11"></a>  n <span class="ot">&lt;- readLn ::</span> <span class="dt">IO</span> <span class="dt">Integer</span></span>
-<span id="cb11-12"><a href="#cb11-12"></a>  result <span class="ot">&lt;-</span> runM <span class="op">.</span> logToIO <span class="op">$</span> myBusinessFunction m n</span>
-<span id="cb11-13"><a href="#cb11-13"></a>  <span class="fu">putStrLn</span> <span class="op">$</span> <span class="st">&quot;The business result is &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> result</span>
-<span id="cb11-14"><a href="#cb11-14"></a></span>
-<span id="cb11-15"><a href="#cb11-15"></a><span class="ot">myBusinessFunction ::</span> <span class="dt">Member</span> <span class="dt">Log</span> r <span class="ot">=&gt;</span> <span class="dt">Integer</span> <span class="ot">-&gt;</span> <span class="dt">Integer</span> <span class="ot">-&gt;</span> <span class="dt">Sem</span> r <span class="dt">Integer</span></span>
-<span id="cb11-16"><a href="#cb11-16"></a>myBusinessFunction m n <span class="ot">=</span> <span class="kw">do</span></span>
-<span id="cb11-17"><a href="#cb11-17"></a>  logInfo <span class="op">$</span> <span class="st">&quot;myBusinessFunction was called with parameters &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> m <span class="op">&lt;&gt;</span> </span>
-<span id="cb11-18"><a href="#cb11-18"></a>            <span class="st">&quot; and &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> n</span>
-<span id="cb11-19"><a href="#cb11-19"></a>  <span class="kw">let</span> result <span class="ot">=</span> m <span class="op">+</span> n</span>
-<span id="cb11-20"><a href="#cb11-20"></a>  logInfo <span class="op">$</span> <span class="st">&quot;myBusinessFunction result is &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> result</span>
-<span id="cb11-21"><a href="#cb11-21"></a>  <span class="fu">return</span> result</span>
-<span id="cb11-22"><a href="#cb11-22"></a></span>
-<span id="cb11-23"><a href="#cb11-23"></a><span class="ot">logToIO ::</span> <span class="dt">Member</span> (<span class="dt">Embed</span> <span class="dt">IO</span>) r <span class="ot">=&gt;</span> <span class="dt">Sem</span> (<span class="dt">Log</span> '<span class="op">:</span> r) a <span class="ot">-&gt;</span> <span class="dt">Sem</span> r a</span>
-<span id="cb11-24"><a href="#cb11-24"></a>logToIO <span class="ot">=</span> interpret (\(<span class="dt">LogInfo</span> stringToLog) <span class="ot">-&gt;</span> embed <span class="op">$</span> <span class="fu">putStrLn</span> stringToLog)</span></code></pre></div>
+<p>You can find the full code example on <a href="https://github.com/Sir4ur0n/blog/tree/master/code-examples/src/PolysemyFirstExample">my Github repo</a>.</p>
 
 </div>
 <div id="footer">
