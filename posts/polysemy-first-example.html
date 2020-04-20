@@ -141,7 +141,7 @@ MemberWithError Log r =&gt; Text -&gt; Sem r ()</code></pre>
 <span id="cb10-5"><a href="#cb10-5"></a>  result <span class="ot">&lt;-</span> runM <span class="op">.</span> logToIO <span class="op">$</span> myBusinessFunction m n</span>
 <span id="cb10-6"><a href="#cb10-6"></a>  <span class="fu">putStrLn</span> <span class="op">$</span> <span class="st">&quot;The business result is &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> result</span></code></pre></div>
 <p>That’s it, our code was successfully migrated from monolithic effect <code>IO</code> to fine-grained <code>Log</code> effect! The additional noise is negligible and the benefit is already interesting, but the benefits increase tenfold in “real” applications with several effects, several actions per effect, several business functions calling each other, reinterpretations, and tests.</p>
-<p>In the next post, we will see how to write tests for business functions with Polysemy effects. Stay tuned!</p>
+<p>In <a href="polysemy-tests.html">my next blog post</a>, I explain how to write tests for business functions with Polysemy effects.</p>
 <p>Full code:</p>
 <div class="sourceCode" id="cb11"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb11-1"><a href="#cb11-1"></a><span class="kw">import</span> <span class="dt">Polysemy</span></span>
 <span id="cb11-2"><a href="#cb11-2"></a></span>
