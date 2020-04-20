@@ -31,15 +31,13 @@
     </p>
 </div>
 
-<p>Note: This post uses HUnit for unit tests and QuickCheck for property based tests.</p>
+<p>One of the benefits of writing pure code is that it’s so easy to test. You provide input, you get output, you assert on the output, that’s it. But “real world applications” have many functions with effects all over the place. And we also need to test those to ensure quality.</p>
+<p>The problem is, how do you test effectful code? As the name indicates, naive tests would have various effects, rendering them “hard” to both write and run.</p>
+<p>A solution particularly favored in languages with no clear effect boundary is to use ephemeral “containerized” environments, like Docker containers, to run their PostgreSQL databases, Kafka clusters, etc., during tests. These ephemeral containers lower the pain of testing effectful code, but with limited benefits: they remain slow and they are rather complex to write/maintain.</p>
+<p>Another solution, when effectful code is well separated from business logic, is to mock the effects, i.e. to “replace” them with fake logic that suits each test exactly. These mocks usually have a greater LOC cost per test compared to containerized environments, but are extremely fast, and easier to maintain over time.</p>
+<p>And guess what? Effect frameworks like Polysemy make it pretty simple to mock effects in tests.</p>
 <h2 id="mocking-effects">Mocking effects</h2>
-<p>A common need when writing tests for effectful code is to <strong>mock</strong> the effects. The benefits of mocking are:</p>
-<ul>
-<li>No struggle to build temporary environments, like a test database</li>
-<li>Tests are fast (no environment startup cost)</li>
-<li>Each test focuses on a single function (separation of concern)</li>
-</ul>
-<p>Now the good news: it is pretty simple to mock effects using a library like Polysemy. All you need to do is change the <strong>interpreter</strong>!</p>
+<p>All we need to do to mock an effect is to change the <strong>interpreter</strong> layer! The effect declaration and the effect use in business code remain unchanged.</p>
 <p>I will reuse the example from my previous post:</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb1-1"><a href="#cb1-1"></a><span class="kw">import</span> <span class="dt">Polysemy</span></span>
 <span id="cb1-2"><a href="#cb1-2"></a></span>
@@ -61,11 +59,12 @@
 <h3 id="step-1-no-mocking">Step 1: No mocking</h3>
 <p>Let’s first write a test where the logging still happens in <code>IO</code> (logging to <code>stdout</code>):</p>
 <div class="sourceCode" id="cb2"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb2-1"><a href="#cb2-1"></a><span class="kw">import</span> <span class="dt">Polysemy</span></span>
-<span id="cb2-2"><a href="#cb2-2"></a><span class="kw">import</span> <span class="dt">Test.HUnit</span></span>
-<span id="cb2-3"><a href="#cb2-3"></a></span>
-<span id="cb2-4"><a href="#cb2-4"></a>test_1and2is3 <span class="ot">=</span> <span class="dt">TestCase</span> <span class="op">$</span> <span class="kw">do</span></span>
-<span id="cb2-5"><a href="#cb2-5"></a>  result <span class="ot">&lt;-</span> runM <span class="op">.</span> logToIO <span class="op">$</span> myBusinessFunction <span class="dv">1</span> <span class="dv">2</span></span>
-<span id="cb2-6"><a href="#cb2-6"></a>  result <span class="op">@?=</span> <span class="dv">3</span></span></code></pre></div>
+<span id="cb2-2"><a href="#cb2-2"></a></span>
+<span id="cb2-3"><a href="#cb2-3"></a><span class="kw">import</span> <span class="dt">Test.HUnit</span></span>
+<span id="cb2-4"><a href="#cb2-4"></a></span>
+<span id="cb2-5"><a href="#cb2-5"></a>test_1and2is3 <span class="ot">=</span> <span class="dt">TestCase</span> <span class="op">$</span> <span class="kw">do</span></span>
+<span id="cb2-6"><a href="#cb2-6"></a>  result <span class="ot">&lt;-</span> runM <span class="op">.</span> logToIO <span class="op">$</span> myBusinessFunction <span class="dv">1</span> <span class="dv">2</span></span>
+<span id="cb2-7"><a href="#cb2-7"></a>  result <span class="op">@?=</span> <span class="dv">3</span></span></code></pre></div>
 <p>The test passes but <code>stdout</code> was polluted with the logs:</p>
 <pre><code>Cases: 1  Tried: 0  Errors: 0  Failures: 0myBusinessFunction was called with parameters 1 and 2
 myBusinessFunction result is 3
@@ -106,7 +105,7 @@ Cases: 1  Tried: 1  Errors: 0  Failures: 0</code></pre>
 <p>So what’s going on here?</p>
 <ol type="1">
 <li><code>logToRecord</code> interprets the <code>Log</code> effect in terms of <code>Writer [String]</code>, i.e. we record all the logged lines as a list of strings</li>
-<li>We run this <code>Writer</code> effect using <code>runState</code></li>
+<li>We run this <code>Writer</code> effect using <code>runState</code> (this will aggregate all recorded logs thanks to the <code>Monoid</code> constraint, using list appending)</li>
 <li>We can now assert both on the business result <code>3</code> and on the logged lines</li>
 </ol>
 <p>That’s it! We have successfully removed the <code>IO</code> effect, our tests are pure, yet we can fully assert on both the business results and the effects!</p>
@@ -130,6 +129,68 @@ Cases: 1  Tried: 1  Errors: 0  Failures: 0</code></pre>
 <span id="cb8-16"><a href="#cb8-16"></a>      myBusinessFunction a resultBC</span>
 <span id="cb8-17"><a href="#cb8-17"></a>   <span class="kw">in</span></span>
 <span id="cb8-18"><a href="#cb8-18"></a>    <span class="fu">last</span> logsAB_then_C <span class="op">==</span> <span class="fu">last</span> logsA_then_BC <span class="op">&amp;&amp;</span> resultAB_then_C <span class="op">==</span> resultA_then_BC</span></code></pre></div>
+<p>This first example showed how to change the interpreter to mock/record the effect behavior, but a major part of mocking effects is to return a dummy value instead of executing the effect to retrieve the value (e.g. database access or environment variable).</p>
+<p>I think it’s interesting to showcase another example where the effect action has a return value other than <code>()</code>.</p>
+<h2 id="intermediary-example-environment-variables">Intermediary example: environment variables</h2>
+<p>Let’s consider the use case of enviroment variable access.</p>
+<p>Many applications need to read some global configuration, often passed by Kubernetes/Rancher through environment variables or secret files. A database URL, the logging level, a port number, an API key, you name it.</p>
+<h3 id="the-effect-declaration">The effect declaration</h3>
+<div class="sourceCode" id="cb9"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb9-1"><a href="#cb9-1"></a><span class="kw">import</span> <span class="dt">Polysemy</span></span>
+<span id="cb9-2"><a href="#cb9-2"></a></span>
+<span id="cb9-3"><a href="#cb9-3"></a><span class="kw">data</span> <span class="dt">Configuration</span> m a <span class="kw">where</span></span>
+<span id="cb9-4"><a href="#cb9-4"></a>  <span class="dt">ReadConf</span><span class="ot"> ::</span> <span class="dt">String</span> <span class="ot">-&gt;</span> <span class="dt">Configuration</span> m (<span class="dt">Maybe</span> <span class="dt">String</span>)</span>
+<span id="cb9-5"><a href="#cb9-5"></a></span>
+<span id="cb9-6"><a href="#cb9-6"></a>makeSem '<span class="dt">'Configuration</span></span></code></pre></div>
+<h3 id="the-effect-use-in-business-code">The effect use in business code</h3>
+<div class="sourceCode" id="cb10"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb10-1"><a href="#cb10-1"></a><span class="kw">import</span> <span class="dt">Data.Maybe</span></span>
+<span id="cb10-2"><a href="#cb10-2"></a><span class="kw">import</span> <span class="dt">Polysemy</span></span>
+<span id="cb10-3"><a href="#cb10-3"></a></span>
+<span id="cb10-4"><a href="#cb10-4"></a><span class="ot">myBusinessFunction ::</span> <span class="dt">Member</span> <span class="dt">Configuration</span> r <span class="ot">=&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Sem</span> r (<span class="dt">Either</span> <span class="dt">String</span> <span class="dt">Int</span>)</span>
+<span id="cb10-5"><a href="#cb10-5"></a>myBusinessFunction amount <span class="ot">=</span> <span class="kw">do</span></span>
+<span id="cb10-6"><a href="#cb10-6"></a>  maybeMinimumAmount <span class="ot">&lt;-</span> <span class="fu">fmap</span> (<span class="fu">fmap</span> <span class="fu">read</span>) (readConf <span class="st">&quot;MINIMUM_AMOUNT&quot;</span>)</span>
+<span id="cb10-7"><a href="#cb10-7"></a>  <span class="kw">let</span> minimumAmount <span class="ot">=</span> fromMaybe <span class="dv">500</span> maybeMinimumAmount</span>
+<span id="cb10-8"><a href="#cb10-8"></a>  <span class="fu">pure</span> <span class="op">$</span> <span class="kw">if</span> amount <span class="op">&gt;=</span> minimumAmount</span>
+<span id="cb10-9"><a href="#cb10-9"></a>           <span class="kw">then</span> <span class="dt">Right</span> amount</span>
+<span id="cb10-10"><a href="#cb10-10"></a>           <span class="kw">else</span> <span class="dt">Left</span> <span class="op">$</span> <span class="fu">show</span> amount <span class="op">++</span> <span class="st">&quot; is lower than the minimum allowed amount &quot;</span> <span class="op">++</span> <span class="fu">show</span> minimumAmount</span></code></pre></div>
+<p>This function reads the <code>MINIMUM_AMOUNT</code> configuration setting, or uses <code>500</code> as default value, then checks that the passed value is greater than or equal to the minimum amount.</p>
+<p>Again, the business code is not concerned with <strong>how</strong> the configuration is retrieved. Is it from an environment variable? A file? A cache? A hardcoded value? Or a combination of those? This decision is up to the interpreter!</p>
+<h3 id="the-interpreters">The interpreters</h3>
+<p>This is an example of interpreter that reads from environment variables:</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb11-1"><a href="#cb11-1"></a><span class="kw">import</span> <span class="dt">System.Environment</span></span>
+<span id="cb11-2"><a href="#cb11-2"></a><span class="kw">import</span> <span class="dt">Polysemy</span></span>
+<span id="cb11-3"><a href="#cb11-3"></a></span>
+<span id="cb11-4"><a href="#cb11-4"></a><span class="ot">confToIO ::</span> <span class="dt">Member</span> (<span class="dt">Embed</span> <span class="dt">IO</span>) r <span class="ot">=&gt;</span> <span class="dt">Sem</span> (<span class="dt">Configuration</span> '<span class="op">:</span> r) a <span class="ot">-&gt;</span> <span class="dt">Sem</span> r a</span>
+<span id="cb11-5"><a href="#cb11-5"></a>confToIO <span class="ot">=</span> interpret (\(<span class="dt">ReadConf</span> envVarName) <span class="ot">-&gt;</span> embed <span class="op">$</span> lookupEnv envVarName)</span></code></pre></div>
+<p>Now let’s write a mock interpreter for our tests!</p>
+<p>As stated in introduction, mocking means that each test gets to decide the behavior of effects. In this particular case, it means the decision of how to convert the configuration name (e.g. <code>MINIMUM_AMOUNT</code>) to a value (of type <code>Maybe String</code>) is up to each test, not to the interpreter.</p>
+<p>Said differently, the interpreter should take as argument how to do this conversion.</p>
+<p>In a functional language, it means: the interpreter should take as argument the function <code>String -&gt; Maybe String</code>, and each test should pass such a function (the mock behavior).</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb12-1"><a href="#cb12-1"></a><span class="ot">confToMock ::</span> (<span class="dt">String</span> <span class="ot">-&gt;</span> <span class="dt">Maybe</span> <span class="dt">String</span>) <span class="ot">-&gt;</span> <span class="dt">Sem</span> (<span class="dt">Configuration</span> '<span class="op">:</span> r) a <span class="ot">-&gt;</span> <span class="dt">Sem</span> r a</span>
+<span id="cb12-2"><a href="#cb12-2"></a>confToMock mockLookupEnv <span class="ot">=</span> interpret (\(<span class="dt">ReadConf</span> envVarName) <span class="ot">-&gt;</span> <span class="fu">pure</span> <span class="op">$</span> mockLookupEnv envVarName)</span></code></pre></div>
+<p>And now a couple of unit tests showing how to use it:</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb13-1"><a href="#cb13-1"></a><span class="kw">import</span> <span class="dt">Test.HUnit</span></span>
+<span id="cb13-2"><a href="#cb13-2"></a></span>
+<span id="cb13-3"><a href="#cb13-3"></a>test_defaultMinimumAmount_under <span class="ot">=</span> <span class="dt">TestCase</span> <span class="op">$</span></span>
+<span id="cb13-4"><a href="#cb13-4"></a>  <span class="kw">let</span> </span>
+<span id="cb13-5"><a href="#cb13-5"></a>    mockLookupEnv _ <span class="ot">=</span> <span class="dt">Nothing</span></span>
+<span id="cb13-6"><a href="#cb13-6"></a>    result <span class="ot">=</span> run <span class="op">.</span> confToMock mockLookupEnv <span class="op">$</span> myBusinessFunction <span class="dv">400</span></span>
+<span id="cb13-7"><a href="#cb13-7"></a>  <span class="kw">in</span> </span>
+<span id="cb13-8"><a href="#cb13-8"></a>    result <span class="op">@?=</span> <span class="dt">Left</span> <span class="st">&quot;400 is lower than the minimum allowed amount 500&quot;</span></span>
+<span id="cb13-9"><a href="#cb13-9"></a></span>
+<span id="cb13-10"><a href="#cb13-10"></a>test_minimumAmount_greater <span class="ot">=</span> <span class="dt">TestCase</span> <span class="op">$</span></span>
+<span id="cb13-11"><a href="#cb13-11"></a>  <span class="kw">let</span> </span>
+<span id="cb13-12"><a href="#cb13-12"></a>    mockLookupEnv <span class="st">&quot;MINIMUM_AMOUNT&quot;</span> <span class="ot">=</span> <span class="dt">Just</span> <span class="st">&quot;250&quot;</span></span>
+<span id="cb13-13"><a href="#cb13-13"></a>    mockLookupEnv _                <span class="ot">=</span> <span class="dt">Nothing</span></span>
+<span id="cb13-14"><a href="#cb13-14"></a>    result <span class="ot">=</span> run <span class="op">.</span> confToMock mockLookupEnv <span class="op">$</span> myBusinessFunction <span class="dv">400</span></span>
+<span id="cb13-15"><a href="#cb13-15"></a>  <span class="kw">in</span> </span>
+<span id="cb13-16"><a href="#cb13-16"></a>    result <span class="op">@?=</span> <span class="dt">Right</span> <span class="dv">400</span></span></code></pre></div>
+<p>As you can see, each test provides the mocking function <code>mockLookupEnv</code> which is then injected in the interpreter.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>As shown in this post, testing (by mocking) is nice and inexpensive in Haskell with an effect framework like Polysemy.</p>
+<p>The separation between effect declaration, effect use and effect interpretation is a big plus: tests only need to change the interpreter to mock effects, all other things remaining equal.</p>
+<p>We have been using this technique for more than 6 months in my team, and we truly enjoy it. Most of us have experience with mocking techniques and frameworks in other languages (e.g. Java, JavaScript) but testing in Haskell with Polysemy is far more enjoyable, and by a long shot.</p>
+<p>Remember: all the things shown here are loosely coupled to the testing libraries (HUnit and QuickCheck) and the effect library (Polysemy). You can achieve similar benefits with any testing or effect library that relies on the same separation of effect declaration, effect use and effect interpretation.</p>
+<p>Enjoy testing!</p>
 
 </div>
 <div id="footer">
