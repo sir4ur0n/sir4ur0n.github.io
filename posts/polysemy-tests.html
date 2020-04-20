@@ -154,6 +154,7 @@ Cases: 1  Tried: 1  Errors: 0  Failures: 0</code></pre>
 <span id="cb10-9"><a href="#cb10-9"></a>           <span class="kw">then</span> <span class="dt">Right</span> amount</span>
 <span id="cb10-10"><a href="#cb10-10"></a>           <span class="kw">else</span> <span class="dt">Left</span> <span class="op">$</span> <span class="fu">show</span> amount <span class="op">++</span> <span class="st">&quot; is lower than the minimum allowed amount &quot;</span> <span class="op">++</span> <span class="fu">show</span> minimumAmount</span></code></pre></div>
 <p>This function reads the <code>MINIMUM_AMOUNT</code> configuration setting, or uses <code>500</code> as default value, then checks that the passed value is greater than or equal to the minimum amount.</p>
+<p>Note: the double <code>fmap</code> may look weird, this is because we want to convert the resulting <code>String</code> to an <code>Int</code> but there are 2 layers to map over: <code>IO</code> and <code>Maybe</code>.</p>
 <p>Again, the business code is not concerned with <strong>how</strong> the configuration is retrieved. Is it from an environment variable? A file? A cache? A hardcoded value? Or a combination of those? This decision is up to the interpreter!</p>
 <h3 id="the-interpreters">The interpreters</h3>
 <p>This is an example of interpreter that reads from environment variables:</p>
