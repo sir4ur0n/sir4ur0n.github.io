@@ -1,0 +1,416 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"
+    xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <channel>
+        <title>Julien Debon's blog</title>
+        <link>https://sir4ur0n.github.io</link>
+        <description><![CDATA[Blog posts related to functional programming and code quality]]></description>
+        <atom:link href="https://sir4ur0n.github.io/rss.xml" rel="self"
+                   type="application/rss+xml" />
+        <lastBuildDate>Fri, 17 Apr 2020 00:00:00 UT</lastBuildDate>
+        <item>
+    <title>Polysemy - Part III - Tests</title>
+    <link>https://sir4ur0n.github.io/posts/polysemy-tests.html</link>
+    <description><![CDATA[<div class="info">
+    Posted on April 17, 2020
+    
+    <p>
+    
+        This is part of a series on effect handling in Haskell using Polysemy
+    
+    </p>
+</div>
+
+<p>One of the benefits of writing pure code is that it’s so easy to test. You provide input, you get output, you assert on the output, that’s it. But “real world applications” have many functions with effects all over the place. And we also need to test those to ensure quality.</p>
+<p>The problem is, how do you test effectful code? As the name indicates, naive tests would have various effects, rendering them “hard” to both write and run.</p>
+<p>A solution particularly favored in languages with no clear effect boundary is to use ephemeral “containerized” environments, like Docker containers, to run their PostgreSQL databases, Kafka clusters, etc., during tests. These ephemeral containers lower the pain of testing effectful code, but with limited benefits: they remain slow and they are rather complex to write/maintain.</p>
+<p>Another solution, when effectful code is well separated from business logic, is to mock the effects, i.e. to “replace” them with fake logic that suits each test exactly. These mocks usually have a greater LOC cost per test compared to containerized environments, but are extremely fast, and easier to maintain over time.</p>
+<p>And guess what? Effect frameworks like Polysemy make it pretty simple to mock effects in tests.</p>
+<h2 id="mocking-effects">Mocking effects</h2>
+<p>All we need to do to mock an effect is to change the <strong>interpreter</strong> layer! The effect declaration and the effect use in business code remain unchanged.</p>
+<p>I will reuse the example from my previous post:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb1-1"><a href="#cb1-1"></a><span class="kw">import</span> <span class="dt">Polysemy</span></span>
+<span id="cb1-2"><a href="#cb1-2"></a></span>
+<span id="cb1-3"><a href="#cb1-3"></a><span class="kw">data</span> <span class="dt">Log</span> m a <span class="kw">where</span></span>
+<span id="cb1-4"><a href="#cb1-4"></a>  <span class="dt">LogInfo</span><span class="ot"> ::</span> <span class="dt">String</span> <span class="ot">-&gt;</span> <span class="dt">Log</span> m ()</span>
+<span id="cb1-5"><a href="#cb1-5"></a></span>
+<span id="cb1-6"><a href="#cb1-6"></a>makeSem &#39;<span class="dt">&#39;Log</span></span>
+<span id="cb1-7"><a href="#cb1-7"></a></span>
+<span id="cb1-8"><a href="#cb1-8"></a><span class="ot">myBusinessFunction ::</span> <span class="dt">Member</span> <span class="dt">Log</span> r <span class="ot">=&gt;</span> <span class="dt">Integer</span> <span class="ot">-&gt;</span> <span class="dt">Integer</span> <span class="ot">-&gt;</span> <span class="dt">Sem</span> r <span class="dt">Integer</span></span>
+<span id="cb1-9"><a href="#cb1-9"></a>myBusinessFunction m n <span class="ot">=</span> <span class="kw">do</span></span>
+<span id="cb1-10"><a href="#cb1-10"></a>  logInfo <span class="op">$</span> <span class="st">&quot;myBusinessFunction was called with parameters &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> m <span class="op">&lt;&gt;</span> </span>
+<span id="cb1-11"><a href="#cb1-11"></a>            <span class="st">&quot; and &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> n</span>
+<span id="cb1-12"><a href="#cb1-12"></a>  <span class="kw">let</span> result <span class="ot">=</span> m <span class="op">+</span> n</span>
+<span id="cb1-13"><a href="#cb1-13"></a>  logInfo <span class="op">$</span> <span class="st">&quot;myBusinessFunction result is &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> result</span>
+<span id="cb1-14"><a href="#cb1-14"></a>  <span class="fu">return</span> result</span>
+<span id="cb1-15"><a href="#cb1-15"></a></span>
+<span id="cb1-16"><a href="#cb1-16"></a><span class="ot">logToIO ::</span> <span class="dt">Member</span> (<span class="dt">Embed</span> <span class="dt">IO</span>) r <span class="ot">=&gt;</span> <span class="dt">Sem</span> (<span class="dt">Log</span> &#39;<span class="op">:</span> r) a <span class="ot">-&gt;</span> <span class="dt">Sem</span> r a</span>
+<span id="cb1-17"><a href="#cb1-17"></a>logToIO <span class="ot">=</span> interpret (\(<span class="dt">LogInfo</span> stringToLog) <span class="ot">-&gt;</span> embed <span class="op">$</span> <span class="fu">putStrLn</span> stringToLog)</span></code></pre></div>
+<h3 id="step-1-no-mocking">Step 1: No mocking</h3>
+<p>Let’s first write a test where the logging still happens in <code>IO</code> (logging to <code>stdout</code>):</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb2-1"><a href="#cb2-1"></a><span class="kw">import</span> <span class="dt">Polysemy</span></span>
+<span id="cb2-2"><a href="#cb2-2"></a></span>
+<span id="cb2-3"><a href="#cb2-3"></a><span class="kw">import</span> <span class="dt">Test.HUnit</span></span>
+<span id="cb2-4"><a href="#cb2-4"></a></span>
+<span id="cb2-5"><a href="#cb2-5"></a>test_1and2is3 <span class="ot">=</span> <span class="dt">TestCase</span> <span class="op">$</span> <span class="kw">do</span></span>
+<span id="cb2-6"><a href="#cb2-6"></a>  result <span class="ot">&lt;-</span> runM <span class="op">.</span> logToIO <span class="op">$</span> myBusinessFunction <span class="dv">1</span> <span class="dv">2</span></span>
+<span id="cb2-7"><a href="#cb2-7"></a>  result <span class="op">@?=</span> <span class="dv">3</span></span></code></pre></div>
+<p>The test passes but <code>stdout</code> was polluted with the logs:</p>
+<pre><code>Cases: 1  Tried: 0  Errors: 0  Failures: 0myBusinessFunction was called with parameters 1 and 2
+myBusinessFunction result is 3
+Cases: 1  Tried: 1  Errors: 0  Failures: 0</code></pre>
+<p>Imagine when you have hundreds of tests running, your terminal (or your CI logs) will quickly get cluttered. Even worse: if our logging interpreter logged in a file, each test run would create and write into such a log file! This would also not scale well with other effects, like database calls.</p>
+<p>We can do better.</p>
+<h3 id="step-2-disable-logs">Step 2: Disable logs</h3>
+<p>Our goal is to write tests for <code>myBusinessFunction</code> without actually logging to <code>stdout</code>.</p>
+<p>Let’s write another interpreter <code>logToSilence</code> for the <code>Log</code> effect, except this interpreter will simply ignore the log and do nothing:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb4-1"><a href="#cb4-1"></a><span class="ot">logToSilence ::</span> <span class="dt">Sem</span> (<span class="dt">Log</span> &#39;<span class="op">:</span> r) a <span class="ot">-&gt;</span> <span class="dt">Sem</span> r a</span>
+<span id="cb4-2"><a href="#cb4-2"></a>logToSilence <span class="ot">=</span> interpret (\(<span class="dt">LogInfo</span> stringToLog) <span class="ot">-&gt;</span> <span class="fu">pure</span> ())</span>
+<span id="cb4-3"><a href="#cb4-3"></a></span>
+<span id="cb4-4"><a href="#cb4-4"></a>test_1and2is3 <span class="ot">=</span> <span class="dt">TestCase</span> <span class="op">$</span> <span class="kw">do</span></span>
+<span id="cb4-5"><a href="#cb4-5"></a>  result <span class="ot">&lt;-</span> runM <span class="op">.</span> logToSilence <span class="op">$</span> myBusinessFunction <span class="dv">1</span> <span class="dv">2</span></span>
+<span id="cb4-6"><a href="#cb4-6"></a>  result <span class="op">@?=</span> <span class="dv">3</span></span></code></pre></div>
+<p>Now the logs are clean, the effect was nicely interpreted:</p>
+<pre><code>Cases: 1  Tried: 1  Errors: 0  Failures: 0</code></pre>
+<p>Note, we previously <strong>had to</strong> run in <code>IO</code> because <code>logToIO</code> required it. Our silencing interpreter is pure, though, so we can replace Polysemy’s <code>runM</code> with <code>run</code> and work with pure code:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb6-1"><a href="#cb6-1"></a>test_1and2is3 <span class="ot">=</span> <span class="dt">TestCase</span> <span class="op">$</span></span>
+<span id="cb6-2"><a href="#cb6-2"></a>  <span class="kw">let</span> result <span class="ot">=</span> run <span class="op">.</span> logToSilence <span class="op">$</span> myBusinessFunction <span class="dv">1</span> <span class="dv">2</span></span>
+<span id="cb6-3"><a href="#cb6-3"></a>  <span class="kw">in</span>  result <span class="op">@?=</span> <span class="dv">3</span></span></code></pre></div>
+<h3 id="step-3-test-effects-too">Step 3: Test effects too</h3>
+<p>Rather than silencing those logs, maybe logging is part of our requirements. In such case, we should actually check that the function logs correctly!</p>
+<p>Let’s replace our silencing interpreter with another one, that records all logs, so that we can check exactly what was logged. We will rely on another pre-existing Polysemy effect, namely <code>Polysemy.Writer</code>, which is the Polysemy equivalent of <code>Writer</code> or <code>WriterT</code>.</p>
+<p>Long story short, a <code>Writer a</code> effect allows you to <em>write</em> values of type <code>a</code> which will be appended together using <code>mappend</code> (thus the <code>Monoid</code> constraint). Note you can’t read those values as long as you are in code under this effect. Then when interpreting this effect, the result will be a pair of the resulting written <code>a</code> and the value returned by the effectful code. For our needs, <code>a ~ [String]</code>, i.e. we record each log and we will get the list of all logged lines when interpreting this <code>Writer [String]</code> effect:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb7-1"><a href="#cb7-1"></a><span class="kw">import</span> <span class="dt">Polysemy</span></span>
+<span id="cb7-2"><a href="#cb7-2"></a><span class="kw">import</span> <span class="dt">Polysemy.Writer</span></span>
+<span id="cb7-3"><a href="#cb7-3"></a></span>
+<span id="cb7-4"><a href="#cb7-4"></a><span class="kw">import</span> <span class="dt">Test.HUnit</span></span>
+<span id="cb7-5"><a href="#cb7-5"></a></span>
+<span id="cb7-6"><a href="#cb7-6"></a><span class="ot">logToRecord ::</span> <span class="dt">Member</span> (<span class="dt">Writer</span> [<span class="dt">String</span>]) r <span class="ot">=&gt;</span> <span class="dt">Sem</span> (<span class="dt">Log</span> &#39;<span class="op">:</span> r) a <span class="ot">-&gt;</span> <span class="dt">Sem</span> r a</span>
+<span id="cb7-7"><a href="#cb7-7"></a>logToRecord <span class="ot">=</span> interpret (\(<span class="dt">LogInfo</span> stringToLog) <span class="ot">-&gt;</span> tell [stringToLog])</span>
+<span id="cb7-8"><a href="#cb7-8"></a></span>
+<span id="cb7-9"><a href="#cb7-9"></a>test_1and2is3 <span class="ot">=</span> <span class="dt">TestCase</span> <span class="op">$</span></span>
+<span id="cb7-10"><a href="#cb7-10"></a>  <span class="kw">let</span> (logs, result) <span class="ot">=</span> run <span class="op">.</span> runWriter <span class="op">.</span> logToRecord <span class="op">$</span> myBusinessFunction <span class="dv">1</span> <span class="dv">2</span></span>
+<span id="cb7-11"><a href="#cb7-11"></a>  <span class="kw">in</span> <span class="kw">do</span></span>
+<span id="cb7-12"><a href="#cb7-12"></a>      result <span class="op">@?=</span> <span class="dv">3</span></span>
+<span id="cb7-13"><a href="#cb7-13"></a>      logs <span class="op">@?=</span> [ <span class="st">&quot;myBusinessFunction was called with parameters 1 and 2&quot;</span></span>
+<span id="cb7-14"><a href="#cb7-14"></a>               , <span class="st">&quot;myBusinessFunction result is 3&quot;</span> ]</span></code></pre></div>
+<p>So what’s going on here?</p>
+<ol type="1">
+<li><code>logToRecord</code> interprets the <code>Log</code> effect in terms of <code>Writer [String]</code>, i.e. we record all the logged lines as a list of strings (using <code>tell</code> from <code>Polysemy.Writer</code> to add logs)</li>
+<li>We run this <code>Writer</code> effect using <code>runWriter</code> (this will aggregate all recorded logs thanks to the <code>Monoid</code> constraint, using list appending)</li>
+<li>We can now assert both on the business result <code>3</code> and on the logged lines</li>
+</ol>
+<p>That’s it! We have successfully removed the <code>IO</code> effect, our tests are pure, yet we can fully assert on both the business results and the effects!</p>
+<p>Note: Technically we should use <code>runWriterAssocR</code> instead of <code>runWriter</code> since the monoid is a list, for performance reasons, but this is beyond the scope of this post.</p>
+<p>It is exactly the same for property based tests (PBT). Say we want to (quick)check our business function is associative (on the result) and check that the last log will be the same (others will not because of order of application):</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb8-1"><a href="#cb8-1"></a><span class="kw">import</span> <span class="dt">Polysemy</span></span>
+<span id="cb8-2"><a href="#cb8-2"></a><span class="kw">import</span> <span class="dt">Polysemy.Writer</span></span>
+<span id="cb8-3"><a href="#cb8-3"></a></span>
+<span id="cb8-4"><a href="#cb8-4"></a><span class="kw">import</span> <span class="dt">Test.QuickCheck</span></span>
+<span id="cb8-5"><a href="#cb8-5"></a></span>
+<span id="cb8-6"><a href="#cb8-6"></a><span class="ot">logToRecord ::</span> <span class="dt">Member</span> (<span class="dt">Writer</span> [<span class="dt">String</span>]) r <span class="ot">=&gt;</span> <span class="dt">Sem</span> (<span class="dt">Log</span> &#39;<span class="op">:</span> r) a <span class="ot">-&gt;</span> <span class="dt">Sem</span> r a</span>
+<span id="cb8-7"><a href="#cb8-7"></a>logToRecord <span class="ot">=</span> interpret (\(<span class="dt">LogInfo</span> stringToLog) <span class="ot">-&gt;</span> tell [stringToLog])</span>
+<span id="cb8-8"><a href="#cb8-8"></a></span>
+<span id="cb8-9"><a href="#cb8-9"></a>test_associative <span class="ot">=</span> \a b c <span class="ot">-&gt;</span></span>
+<span id="cb8-10"><a href="#cb8-10"></a>  <span class="kw">let</span></span>
+<span id="cb8-11"><a href="#cb8-11"></a>    (logsAB_then_C, resultAB_then_C) <span class="ot">=</span> run <span class="op">.</span> runWriter <span class="op">.</span> logToRecord <span class="op">$</span> <span class="kw">do</span></span>
+<span id="cb8-12"><a href="#cb8-12"></a>      resultAB <span class="ot">&lt;-</span> myBusinessFunction a b</span>
+<span id="cb8-13"><a href="#cb8-13"></a>      myBusinessFunction resultAB c</span>
+<span id="cb8-14"><a href="#cb8-14"></a>    (logsA_then_BC, resultA_then_BC) <span class="ot">=</span> run <span class="op">.</span> runWriter <span class="op">.</span> logToRecord <span class="op">$</span> <span class="kw">do</span></span>
+<span id="cb8-15"><a href="#cb8-15"></a>      resultBC <span class="ot">&lt;-</span> myBusinessFunction b c</span>
+<span id="cb8-16"><a href="#cb8-16"></a>      myBusinessFunction a resultBC</span>
+<span id="cb8-17"><a href="#cb8-17"></a>   <span class="kw">in</span></span>
+<span id="cb8-18"><a href="#cb8-18"></a>    <span class="fu">last</span> logsAB_then_C <span class="op">==</span> <span class="fu">last</span> logsA_then_BC <span class="op">&amp;&amp;</span> resultAB_then_C <span class="op">==</span> resultA_then_BC</span></code></pre></div>
+<p>This first example showed how to change the interpreter to mock/record the effect behavior, but a major part of mocking effects is to return a dummy value instead of executing the effect to retrieve the value (e.g. database access or environment variable).</p>
+<p>I think it’s interesting to showcase another example where the effect action has a return value other than <code>()</code>.</p>
+<p>You can find the full code example on <a href="https://github.com/Sir4ur0n/blog/tree/master/code-examples/src/PolysemyTestsLogging">my Github repo</a>.</p>
+<h2 id="intermediary-example-environment-variables">Intermediary example: environment variables</h2>
+<p>Let’s consider the use case of enviroment variable access.</p>
+<p>Many applications need to read some global configuration, often passed by Kubernetes/Rancher through environment variables or secret files. A database URL, the logging level, a port number, an API key, you name it.</p>
+<h3 id="the-effect-declaration">The effect declaration</h3>
+<div class="sourceCode" id="cb9"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb9-1"><a href="#cb9-1"></a><span class="kw">import</span> <span class="dt">Polysemy</span></span>
+<span id="cb9-2"><a href="#cb9-2"></a></span>
+<span id="cb9-3"><a href="#cb9-3"></a><span class="kw">data</span> <span class="dt">Configuration</span> m a <span class="kw">where</span></span>
+<span id="cb9-4"><a href="#cb9-4"></a>  <span class="dt">ReadConf</span><span class="ot"> ::</span> <span class="dt">String</span> <span class="ot">-&gt;</span> <span class="dt">Configuration</span> m (<span class="dt">Maybe</span> <span class="dt">String</span>)</span>
+<span id="cb9-5"><a href="#cb9-5"></a></span>
+<span id="cb9-6"><a href="#cb9-6"></a>makeSem &#39;<span class="dt">&#39;Configuration</span></span></code></pre></div>
+<h3 id="the-effect-use-in-business-code">The effect use in business code</h3>
+<div class="sourceCode" id="cb10"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb10-1"><a href="#cb10-1"></a><span class="kw">import</span> <span class="dt">Data.Maybe</span></span>
+<span id="cb10-2"><a href="#cb10-2"></a><span class="kw">import</span> <span class="dt">Polysemy</span></span>
+<span id="cb10-3"><a href="#cb10-3"></a></span>
+<span id="cb10-4"><a href="#cb10-4"></a><span class="ot">myBusinessFunction ::</span> <span class="dt">Member</span> <span class="dt">Configuration</span> r <span class="ot">=&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Sem</span> r (<span class="dt">Either</span> <span class="dt">String</span> <span class="dt">Int</span>)</span>
+<span id="cb10-5"><a href="#cb10-5"></a>myBusinessFunction amount <span class="ot">=</span> <span class="kw">do</span></span>
+<span id="cb10-6"><a href="#cb10-6"></a>  maybeMinimumAmount <span class="ot">&lt;-</span> <span class="fu">fmap</span> (<span class="fu">fmap</span> <span class="fu">read</span>) (readConf <span class="st">&quot;MINIMUM_AMOUNT&quot;</span>)</span>
+<span id="cb10-7"><a href="#cb10-7"></a>  <span class="kw">let</span> minimumAmount <span class="ot">=</span> fromMaybe <span class="dv">500</span> maybeMinimumAmount</span>
+<span id="cb10-8"><a href="#cb10-8"></a>  <span class="fu">pure</span> <span class="op">$</span> <span class="kw">if</span> amount <span class="op">&gt;=</span> minimumAmount</span>
+<span id="cb10-9"><a href="#cb10-9"></a>           <span class="kw">then</span> <span class="dt">Right</span> amount</span>
+<span id="cb10-10"><a href="#cb10-10"></a>           <span class="kw">else</span> <span class="dt">Left</span> <span class="op">$</span> <span class="fu">show</span> amount <span class="op">++</span> <span class="st">&quot; is lower than the minimum allowed amount &quot;</span> <span class="op">++</span> <span class="fu">show</span> minimumAmount</span></code></pre></div>
+<p>This function reads the <code>MINIMUM_AMOUNT</code> configuration setting, or uses <code>500</code> as default value, then checks that the passed value is greater than or equal to the minimum amount.</p>
+<p>Note: the double <code>fmap</code> may look weird, this is because we want to convert the resulting <code>String</code> to an <code>Int</code> but there are 2 layers to map over: <code>IO</code> and <code>Maybe</code>.</p>
+<p>Again, the business code is not concerned with <strong>how</strong> the configuration is retrieved. Is it from an environment variable? A file? A cache? A hardcoded value? Or a combination of those? This decision is up to the interpreter!</p>
+<h3 id="the-interpreters">The interpreters</h3>
+<p>This is an example of interpreter that reads from environment variables:</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb11-1"><a href="#cb11-1"></a><span class="kw">import</span> <span class="dt">System.Environment</span></span>
+<span id="cb11-2"><a href="#cb11-2"></a><span class="kw">import</span> <span class="dt">Polysemy</span></span>
+<span id="cb11-3"><a href="#cb11-3"></a></span>
+<span id="cb11-4"><a href="#cb11-4"></a><span class="ot">confToIO ::</span> <span class="dt">Member</span> (<span class="dt">Embed</span> <span class="dt">IO</span>) r <span class="ot">=&gt;</span> <span class="dt">Sem</span> (<span class="dt">Configuration</span> &#39;<span class="op">:</span> r) a <span class="ot">-&gt;</span> <span class="dt">Sem</span> r a</span>
+<span id="cb11-5"><a href="#cb11-5"></a>confToIO <span class="ot">=</span> interpret (\(<span class="dt">ReadConf</span> envVarName) <span class="ot">-&gt;</span> embed <span class="op">$</span> lookupEnv envVarName)</span></code></pre></div>
+<p>Now let’s write a mock interpreter for our tests!</p>
+<p>As stated in introduction, mocking means that each test gets to decide the behavior of effects. In this particular case, it means the decision of how to convert the configuration name (e.g. <code>MINIMUM_AMOUNT</code>) to a value (of type <code>Maybe String</code>) is up to each test, not to the interpreter.</p>
+<p>Said differently, the interpreter should take as argument how to do this conversion.</p>
+<p>In a functional language, it means: the interpreter should take as argument the function <code>String -&gt; Maybe String</code>, and each test should pass such a function (the mock behavior).</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb12-1"><a href="#cb12-1"></a><span class="ot">confToMock ::</span> (<span class="dt">String</span> <span class="ot">-&gt;</span> <span class="dt">Maybe</span> <span class="dt">String</span>) <span class="ot">-&gt;</span> <span class="dt">Sem</span> (<span class="dt">Configuration</span> &#39;<span class="op">:</span> r) a <span class="ot">-&gt;</span> <span class="dt">Sem</span> r a</span>
+<span id="cb12-2"><a href="#cb12-2"></a>confToMock mockLookupEnv <span class="ot">=</span> interpret (\(<span class="dt">ReadConf</span> envVarName) <span class="ot">-&gt;</span> <span class="fu">pure</span> <span class="op">$</span> mockLookupEnv envVarName)</span></code></pre></div>
+<p>And now a couple of unit tests showing how to use it:</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb13-1"><a href="#cb13-1"></a><span class="kw">import</span> <span class="dt">Test.HUnit</span></span>
+<span id="cb13-2"><a href="#cb13-2"></a></span>
+<span id="cb13-3"><a href="#cb13-3"></a>test_defaultMinimumAmount_lower <span class="ot">=</span> <span class="dt">TestCase</span> <span class="op">$</span></span>
+<span id="cb13-4"><a href="#cb13-4"></a>  <span class="kw">let</span> </span>
+<span id="cb13-5"><a href="#cb13-5"></a>    mockLookupEnv _ <span class="ot">=</span> <span class="dt">Nothing</span></span>
+<span id="cb13-6"><a href="#cb13-6"></a>    result <span class="ot">=</span> run <span class="op">.</span> confToMock mockLookupEnv <span class="op">$</span> myBusinessFunction <span class="dv">400</span></span>
+<span id="cb13-7"><a href="#cb13-7"></a>  <span class="kw">in</span> </span>
+<span id="cb13-8"><a href="#cb13-8"></a>    result <span class="op">@?=</span> <span class="dt">Left</span> <span class="st">&quot;400 is lower than the minimum allowed amount 500&quot;</span></span>
+<span id="cb13-9"><a href="#cb13-9"></a></span>
+<span id="cb13-10"><a href="#cb13-10"></a>test_minimumAmount_greater <span class="ot">=</span> <span class="dt">TestCase</span> <span class="op">$</span></span>
+<span id="cb13-11"><a href="#cb13-11"></a>  <span class="kw">let</span> </span>
+<span id="cb13-12"><a href="#cb13-12"></a>    mockLookupEnv <span class="st">&quot;MINIMUM_AMOUNT&quot;</span> <span class="ot">=</span> <span class="dt">Just</span> <span class="st">&quot;250&quot;</span></span>
+<span id="cb13-13"><a href="#cb13-13"></a>    mockLookupEnv _                <span class="ot">=</span> <span class="dt">Nothing</span></span>
+<span id="cb13-14"><a href="#cb13-14"></a>    result <span class="ot">=</span> run <span class="op">.</span> confToMock mockLookupEnv <span class="op">$</span> myBusinessFunction <span class="dv">400</span></span>
+<span id="cb13-15"><a href="#cb13-15"></a>  <span class="kw">in</span> </span>
+<span id="cb13-16"><a href="#cb13-16"></a>    result <span class="op">@?=</span> <span class="dt">Right</span> <span class="dv">400</span></span></code></pre></div>
+<p>As you can see, each test provides the mocking function <code>mockLookupEnv</code> which is then injected in the interpreter.</p>
+<p>You can find the full code example on <a href="https://github.com/Sir4ur0n/blog/tree/master/code-examples/src/PolysemyTestsConfiguration">my Github repo</a>.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>As shown in this post, testing (by mocking) is nice and inexpensive in Haskell with an effect framework like Polysemy.</p>
+<p>The separation between effect declaration, effect use and effect interpretation is a big plus: tests only need to change the interpreter to mock effects, all other things remaining equal.</p>
+<p>We have been using this technique for more than 6 months in my team, and we truly enjoy it. Most of us have experience with mocking techniques and frameworks in other languages (e.g. Java, JavaScript) but testing in Haskell with Polysemy is far more enjoyable, and by a long shot.</p>
+<p>Remember: all the things shown here are loosely coupled to the testing libraries (HUnit and QuickCheck) and the effect library (Polysemy). You can achieve similar benefits with any testing or effect library that relies on the same separation of effect declaration, effect use and effect interpretation.</p>
+<p>Enjoy testing!</p>
+]]></description>
+    <pubDate>Fri, 17 Apr 2020 00:00:00 UT</pubDate>
+    <guid>https://sir4ur0n.github.io/posts/polysemy-tests.html</guid>
+    <dc:creator>Julien Debon</dc:creator>
+</item>
+<item>
+    <title>Polysemy - Part II - First example</title>
+    <link>https://sir4ur0n.github.io/posts/polysemy-first-example.html</link>
+    <description><![CDATA[<div class="info">
+    Posted on November 30, 2019
+    
+    <p>
+    
+        This is part of a series on effect handling in Haskell using Polysemy
+    
+    </p>
+</div>
+
+<h2 id="setup">Setup</h2>
+<p>Let’s setup our project as documented in <a href="https://hackage.haskell.org/package/polysemy">Polysemy readme</a> beforehand (instructions are for Stack projects but I’m sure you will easily find the Cabal/Nix equivalent):</p>
+<ul>
+<li>Add <code>polysemy</code> and <code>polysemy-plugin</code> to our <code>package.yaml</code> <code>dependencies</code></li>
+<li>Add the following to <code>ghc-options</code>:</li>
+</ul>
+<div class="sourceCode" id="cb1"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1"></a><span class="kw">-</span><span class="at"> -fplugin=Polysemy.Plugin</span></span></code></pre></div>
+<ul>
+<li>Add the following to <code>default-extensions</code> (we also add <code>TemplateHaskell</code> because we use it to reduce boilerplate):</li>
+</ul>
+<div class="sourceCode" id="cb2"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1"></a><span class="kw">-</span><span class="at"> DataKinds</span></span>
+<span id="cb2-2"><a href="#cb2-2"></a><span class="kw">-</span><span class="at"> FlexibleContexts</span></span>
+<span id="cb2-3"><a href="#cb2-3"></a><span class="kw">-</span><span class="at"> GADTs</span></span>
+<span id="cb2-4"><a href="#cb2-4"></a><span class="kw">-</span><span class="at"> LambdaCase</span></span>
+<span id="cb2-5"><a href="#cb2-5"></a><span class="kw">-</span><span class="at"> PolyKinds</span></span>
+<span id="cb2-6"><a href="#cb2-6"></a><span class="kw">-</span><span class="at"> RankNTypes</span></span>
+<span id="cb2-7"><a href="#cb2-7"></a><span class="kw">-</span><span class="at"> ScopedTypeVariables</span></span>
+<span id="cb2-8"><a href="#cb2-8"></a><span class="kw">-</span><span class="at"> TemplateHaskell</span></span>
+<span id="cb2-9"><a href="#cb2-9"></a><span class="kw">-</span><span class="at"> TypeApplications</span></span>
+<span id="cb2-10"><a href="#cb2-10"></a><span class="kw">-</span><span class="at"> TypeOperators</span></span>
+<span id="cb2-11"><a href="#cb2-11"></a><span class="kw">-</span><span class="at"> TypeFamilies</span></span></code></pre></div>
+<h2 id="logging">Logging</h2>
+<p>A common need in any application is logging. Whether it’s technical logs to keep track of batch start/end (and result), audit logs about who did an admin action, or functional logs about a particular feature being used, it’s useful to find what happened in our beloved applications.</p>
+<p>But logging is an effect! No matter if we send logs to standard output, a log file, or over the network, it has an effect on the world, other than mere processing.</p>
+<p>Of course we could use a good ol’ <code>IO</code> and call it a day, but as explained in the previous post, <code>IO</code> is too coarse, we want more granularity. Instead, let’s create and use a <code>Log</code> effect!</p>
+<h3 id="effect-declaration">Effect declaration</h3>
+<p>Let’s cut to the chase:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb3-1"><a href="#cb3-1"></a><span class="kw">import</span> <span class="dt">Polysemy</span></span>
+<span id="cb3-2"><a href="#cb3-2"></a></span>
+<span id="cb3-3"><a href="#cb3-3"></a><span class="kw">data</span> <span class="dt">Log</span> m a <span class="kw">where</span></span>
+<span id="cb3-4"><a href="#cb3-4"></a>  <span class="dt">LogInfo</span><span class="ot"> ::</span> <span class="dt">String</span> <span class="ot">-&gt;</span> <span class="dt">Log</span> m ()</span>
+<span id="cb3-5"><a href="#cb3-5"></a></span>
+<span id="cb3-6"><a href="#cb3-6"></a>makeSem &#39;<span class="dt">&#39;Log</span></span></code></pre></div>
+<p>This is pretty dense already, let’s analyze bit by bit what’s going on!</p>
+<p><code>data Log m a</code> is our effect.</p>
+<ul>
+<li><code>Log</code> is the effect name. This is the part that will appear in all our function signatures. Better pick a name that’s descriptive (and ideally not verbose) of the effect!</li>
+<li><code>m</code> must always be there (you can guess the <code>m</code> stands for <code>Monad</code> but you don’t really need to know what it’s used for)</li>
+<li><code>()</code> is the return type of the action. A logging action returns nothing, so we stick to Unit (<code>()</code>)</li>
+</ul>
+<p><code>LogInfo :: String -&gt; Log m ()</code> is a possible <strong>action</strong> that has the <code>Log</code> effect. As you may have guessed, it is an action that takes a <code>String</code> to log, and will log it! Note we can have several actions under the same effect, but let’s start with one.</p>
+<p><code>makeSem ''Log</code> uses Template Haskell to create the <code>logInfo</code> function (same name as the action, but with the first letter changed to lowercase). We do not <em>technically</em> need this, but it saves us writing uninteresting boilerplate, so let’s stick with it.</p>
+<p>In case you are curious, let’s check the <strong>type</strong> of this <code>logInfo</code> function:</p>
+<pre><code>&gt; :type logInfo
+
+logInfo :: (IfStuck (IndexOf r (Found r Log)) (IfStuck r (TypeError ...) (Pure (TypeError ...))) NoErrorFcf, Find r Log, IndexOf r (Found r Log) ~ Log) =&gt; String -&gt; Sem r ()</code></pre>
+<p>You know what? Let’s pretend we never saw that. We don’t actually need to understand this (I don’t).</p>
+<p>What if we display <strong>information</strong> about this function instead?</p>
+<pre><code>&gt; :info logInfo
+
+MemberWithError Log r =&gt; Text -&gt; Sem r ()</code></pre>
+<p>which reads as “Give me a <code>Text</code> and I’ll give you a <code>Sem</code> monad with <strong>at least</strong> the <code>Log</code> effect”.</p>
+<p>And that’s it! We have declared our logging effect. Remember, with effects, we split effect declaration and effect interpretation. This piece of code in no way explains <strong>how</strong> one should log. That is the whole point!</p>
+<h3 id="effect-use">Effect use</h3>
+<p>Now that we have created our logging effect, let’s use it in our business code! Let’s say we currently have this piece of code:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb6-1"><a href="#cb6-1"></a><span class="ot">myBusinessFunction ::</span> <span class="dt">Integer</span> <span class="ot">-&gt;</span> <span class="dt">Integer</span> <span class="ot">-&gt;</span> <span class="dt">IO</span> <span class="dt">Integer</span></span>
+<span id="cb6-2"><a href="#cb6-2"></a>myBusinessFunction m n <span class="ot">=</span> <span class="kw">do</span></span>
+<span id="cb6-3"><a href="#cb6-3"></a>  <span class="fu">putStrLn</span> <span class="op">$</span> <span class="st">&quot;myBusinessFunction was called with parameters &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> m <span class="op">&lt;&gt;</span> </span>
+<span id="cb6-4"><a href="#cb6-4"></a>             <span class="st">&quot; and &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> n</span>
+<span id="cb6-5"><a href="#cb6-5"></a>  <span class="kw">let</span> result <span class="ot">=</span> m <span class="op">+</span> n</span>
+<span id="cb6-6"><a href="#cb6-6"></a>  <span class="fu">putStrLn</span> <span class="op">$</span> <span class="st">&quot;myBusinessFunction result is &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> result</span>
+<span id="cb6-7"><a href="#cb6-7"></a>  <span class="fu">return</span> result</span></code></pre></div>
+<p><code>IO</code> is too coarse, we want to replace its use with our shiny new effect. Fear not, my friend, this is as simple as:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb7-1"><a href="#cb7-1"></a><span class="ot">myBusinessFunction ::</span> <span class="dt">Member</span> <span class="dt">Log</span> r <span class="ot">=&gt;</span> <span class="dt">Integer</span> <span class="ot">-&gt;</span> <span class="dt">Integer</span> <span class="ot">-&gt;</span> <span class="dt">Sem</span> r <span class="dt">Integer</span></span>
+<span id="cb7-2"><a href="#cb7-2"></a>myBusinessFunction m n <span class="ot">=</span> <span class="kw">do</span></span>
+<span id="cb7-3"><a href="#cb7-3"></a>  logInfo <span class="op">$</span> <span class="st">&quot;myBusinessFunction was called with parameters &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> m <span class="op">&lt;&gt;</span> </span>
+<span id="cb7-4"><a href="#cb7-4"></a>            <span class="st">&quot; and &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> n</span>
+<span id="cb7-5"><a href="#cb7-5"></a>  <span class="kw">let</span> result <span class="ot">=</span> m <span class="op">+</span> n</span>
+<span id="cb7-6"><a href="#cb7-6"></a>  logInfo <span class="op">$</span> <span class="st">&quot;myBusinessFunction result is &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> result</span>
+<span id="cb7-7"><a href="#cb7-7"></a>  <span class="fu">return</span> result</span></code></pre></div>
+<p>The main changes are:</p>
+<ul>
+<li>the constraint <code>Member Log r</code> which tells that <code>r</code> must have <strong>at least</strong> the <code>Log</code> effect (because we will use it in our implementation)</li>
+<li>the return type <code>Sem r Integer</code> which you can read as “A Polysemy monad with the list of effects <code>r</code> and which returns an <code>Integer</code>”. And the only thing we know (and we need to know) is that <code>r</code> has the <code>Log</code> effect. It may very well have a thousand other effects, or none, we don’t care in this business code. We declare the <strong>needed</strong> effects, not the <strong>exhaustive list</strong> of effects</li>
+<li>the use of <code>logInfo</code> (remember? It was generated thanks to <code>makeSem ''Log</code> in the effect declaration) to actually log stuff</li>
+</ul>
+<p>This piece of code is much better. Now our business code better expresses its effects in the type signature (it logs, and cannot do anything else!), no longer has hardcoded the implementation (<code>putStrLn</code>), and we haven’t added any complexity to our code.</p>
+<p>Now you might wonder “This is great, but at some point, somebody’s gotta do the actual logging with <code>putStrLn</code>!”.</p>
+<h3 id="effect-interpretation">Effect interpretation</h3>
+<p>This is where the real world catches on us. It’s time to explain how the <code>Log</code> effect must be interpreted in terms of <code>putStrLn</code>. Say the previous business code was consumed as such:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb8-1"><a href="#cb8-1"></a><span class="ot">main ::</span> <span class="dt">IO</span> ()</span>
+<span id="cb8-2"><a href="#cb8-2"></a>main <span class="ot">=</span> <span class="kw">do</span></span>
+<span id="cb8-3"><a href="#cb8-3"></a>  m <span class="ot">&lt;- readLn ::</span> <span class="dt">IO</span> <span class="dt">Integer</span></span>
+<span id="cb8-4"><a href="#cb8-4"></a>  n <span class="ot">&lt;- readLn ::</span> <span class="dt">IO</span> <span class="dt">Integer</span></span>
+<span id="cb8-5"><a href="#cb8-5"></a>  result <span class="ot">&lt;-</span> myBusinessFunction m n</span>
+<span id="cb8-6"><a href="#cb8-6"></a>  <span class="fu">putStrLn</span> <span class="op">$</span> <span class="st">&quot;The business result is &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> result</span></code></pre></div>
+<p>After the changes we did to <code>myBusinessFunction</code> this code no longer compiles, because <code>myBusinessFunction</code> works in the <code>Sem</code> monad while <code>main</code> works in the <code>IO</code> monad.</p>
+<p>First, let’s write a function to interpret the <code>Log</code> effect in terms of <code>IO</code>:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb9-1"><a href="#cb9-1"></a><span class="ot">logToIO ::</span> <span class="dt">Member</span> (<span class="dt">Embed</span> <span class="dt">IO</span>) r <span class="ot">=&gt;</span> <span class="dt">Sem</span> (<span class="dt">Log</span> &#39;<span class="op">:</span> r) a <span class="ot">-&gt;</span> <span class="dt">Sem</span> r a</span>
+<span id="cb9-2"><a href="#cb9-2"></a>logToIO <span class="ot">=</span> interpret (\(<span class="dt">LogInfo</span> stringToLog) <span class="ot">-&gt;</span> embed <span class="op">$</span> <span class="fu">putStrLn</span> stringToLog)</span></code></pre></div>
+<p>There’s a lot going on! Don’t panic, as impressive as it may look the first time, you will soon get used to it.</p>
+<ul>
+<li>the <code>Member (Embed IO) r</code> constraint means <code>r</code> must have the ability to do <code>IO</code>. Ideally we would write <code>Member IO r</code> but since <code>IO</code> is not a Polysemy effect, we need to wrap it as an effect thanks to <code>Embed</code>. Note we require the <code>IO</code> effect because we want our main application to log using <code>putStrLn</code>. In our tests, we will write another interpreter with a pure function, thus we will not need to require the <code>IO</code> effect</li>
+<li>the <code>Sem (Log ': r) a -&gt; Sem r a</code> type signature can be read as “I take a <code>Sem</code> monad which has any effect <strong>and the <code>Log</code> effect</strong>, and return the same <code>Sem</code> monad without that <code>Log</code> effect”, effectively meaning we are interpreting (destroying/consuming) the <code>Log</code> effect. Note, in more recent versions of <code>Polysemy</code> (unfortunately not yet available on Stackage), this type signature can be replaced with <code>InterpreterFor Log r</code>, which makes the function intention even clearer!</li>
+<li>note that the implementation does not explicitly mention the input argument (called <a href="https://wiki.haskell.org/Pointfree">pointfree style</a>), this is how interpreters usually look</li>
+<li><code>interpret</code> means what follows will be an interpreter</li>
+<li>since all we know about <code>r</code> is that it has the <code>Log</code> effect, we need to interpret only its actions (<code>LogInfo</code>)</li>
+<li>the <code>(LogInfo stringToLog)</code> pattern matching lets us capture the string to log when the action to interpret is <code>LogInfo</code></li>
+<li><code>putStrLn stringToLog</code> is the actual logging, however since its type is <code>IO ()</code>, we need to wrap it back into our <code>Sem</code> monad, thanks to <code>embed</code></li>
+</ul>
+<p>Again, this usually is the toughest part to grasp. Don’t worry if it takes time to sink in. Wash, rinse, repeat.</p>
+<p>Now we are able to convert a <code>Sem</code> monad with the <code>Log</code> effect to a <code>Sem</code> monad with the <code>Embed IO</code> effect. The last piece of the puzzle we need is to convert a <code>Sem</code> monad with <code>IO</code> to a good ol’ <code>IO</code>. Thankfully Polysemy already provides such a function, namely <code>runM</code>.</p>
+<p>Let’s head back to our <code>main</code> function and explain to the compiler (and the reader) how one is supposed to interpret those hippie effects back into motherland <code>IO</code>:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb10-1"><a href="#cb10-1"></a><span class="ot">main ::</span> <span class="dt">IO</span> ()</span>
+<span id="cb10-2"><a href="#cb10-2"></a>main <span class="ot">=</span> <span class="kw">do</span></span>
+<span id="cb10-3"><a href="#cb10-3"></a>  m <span class="ot">&lt;- readLn ::</span> <span class="dt">IO</span> <span class="dt">Integer</span></span>
+<span id="cb10-4"><a href="#cb10-4"></a>  n <span class="ot">&lt;- readLn ::</span> <span class="dt">IO</span> <span class="dt">Integer</span></span>
+<span id="cb10-5"><a href="#cb10-5"></a>  result <span class="ot">&lt;-</span> runM <span class="op">.</span> logToIO <span class="op">$</span> myBusinessFunction m n</span>
+<span id="cb10-6"><a href="#cb10-6"></a>  <span class="fu">putStrLn</span> <span class="op">$</span> <span class="st">&quot;The business result is &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> result</span></code></pre></div>
+<p>That’s it, our code was successfully migrated from monolithic effect <code>IO</code> to fine-grained <code>Log</code> effect! The additional noise is negligible and the benefit is already interesting, but the benefits increase tenfold in “real” applications with several effects, several actions per effect, several business functions calling each other, reinterpretations, and tests.</p>
+<p>In <a href="polysemy-tests.html">my next blog post</a>, I explain how to write tests for business functions with Polysemy effects.</p>
+<p>You can find the full code example on <a href="https://github.com/Sir4ur0n/blog/tree/master/code-examples/src/PolysemyFirstExample">my Github repo</a>.</p>
+]]></description>
+    <pubDate>Sat, 30 Nov 2019 00:00:00 UT</pubDate>
+    <guid>https://sir4ur0n.github.io/posts/polysemy-first-example.html</guid>
+    <dc:creator>Julien Debon</dc:creator>
+</item>
+<item>
+    <title>Polysemy - Part I - Introduction</title>
+    <link>https://sir4ur0n.github.io/posts/intro-polysemy.html</link>
+    <description><![CDATA[<div class="info">
+    Posted on November 30, 2019
+    
+    <p>
+    
+        This is part of a series on effect handling in Haskell using Polysemy
+    
+    </p>
+</div>
+
+<h2 id="effect-vs-side-effect">Effect vs Side effect</h2>
+<p>Before I took on functional programming, I never made a difference between “effect” and “side effect”. Interestingly, there are many <a href="https://en.wikipedia.org/wiki/Side_effect_(computer_science)">resources</a> on side effects but few on effects. So let’s start with a few definitions:</p>
+<ul>
+<li>A function is a piece of software requiring 0, 1 or several parameters, and returning a value.</li>
+<li>A function has an effect when it has an observable interaction with the world outside of that function. Examples of effects are I/O (disk, network, keyboard, screen…), global variable or parameter mutation, program interruption, etc.</li>
+<li>A function has a side effect when it has an effect that was not described by the function - and thus, the caller of the function is unaware the program now has this effect!</li>
+</ul>
+<p>Example of function having a side effect:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb1-1"><a href="#cb1-1"></a><span class="bu">Integer</span> <span class="fu">foo</span>(<span class="bu">String</span> input) {</span>
+<span id="cb1-2"><a href="#cb1-2"></a>    <span class="bu">System</span>.<span class="fu">out</span>.<span class="fu">println</span>(<span class="st">&quot;I am inside foo&quot;</span>);</span>
+<span id="cb1-3"><a href="#cb1-3"></a>    <span class="kw">return</span> <span class="dv">42</span>;</span>
+<span id="cb1-4"><a href="#cb1-4"></a>}</span></code></pre></div>
+<p>The caller is well aware this function takes a <code>String</code> as input and returns an <code>Integer</code>, but it has no idea the function will print something to the standard output without looking at its implementation. Requiring every developer to read through the implementation of each function, and each sub-function called by each function, and so on, obviously doesn’t scale to large programs. This leads to buggy, brittle programs that everybody fears maintaining.</p>
+<p>Example of function having an effect which is not a side effect:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode java"><code class="sourceCode java"><span id="cb2-1"><a href="#cb2-1"></a><span class="bu">Integer</span> <span class="fu">foo</span>(<span class="bu">String</span> input) <span class="kw">throws</span> CannotDoThatException {</span>
+<span id="cb2-2"><a href="#cb2-2"></a>    <span class="co">// ...</span></span>
+<span id="cb2-3"><a href="#cb2-3"></a>}</span></code></pre></div>
+<p>This function has an effect (program interruption through <code>CannotDoThatException</code>) which is definitely not hidden. The author knows very well this function can abruptly stop (and why) without looking at its implementation. This is much safer, and scales much better to programs.</p>
+<p>Effects are awesome. A program is merely something that converts electricity into effects, be it a calculation result, a character displayed on your screen or your voice being recorded by a microphone.</p>
+<p>I challenge you to write a useful program without effect.</p>
+<p>Side effects, on the other hand, are evil. They creep throughout programs, the author or reader unaware of them, and may or may not have unintended consequences whenever they run.</p>
+<p>And suddenly one can see why so many developers (myself included) confuse effects with side effects: most programming languages confuse them, too! Checked exceptions aside, Java treats all effects as side effects. Most of us have learnt and practiced unsafe programming for years because all of our effects (useful and intentional!) are side effects (hidden, untraceable, creeping).</p>
+<p>And now the good news: some languages fully support and embrace effects, but make side effects impossible, resulting in safer programs for free! As an example, in Haskell, all functions having effects don’t return a value of type <code>Foo</code>, but of type <code>IO Foo</code>, meaning “This function ultimately returns a <code>Foo</code> but has effects along the way”. And all functions calling it also have to change their type from <code>Bar</code> to <code>IO Bar</code> to track the propagation of effects.</p>
+<h2 id="io-vs.-effect">IO vs. Effect</h2>
+<p>Many Haskellers have a love-hate relationship with <code>IO</code>.</p>
+<p>Love, because unlike most languages, Haskell programs “tag” functions with effects using <code>IO</code>, leading to programs that are easier to understand, and forcing developers to separate concerns between pure and impure functions.</p>
+<p>Hate, because <code>IO</code> is binary: either a function has effects, or it has not, but you do not get much more information from <code>IO</code>. Whether an <code>IO</code> function writes to a file or launches a nuclear missile, you cannot tell by reading its type.</p>
+<p>The thing is, Haskell developers love to carry as much information (and constraints) as possible in types. Everything the compiler checks, we don’t have to check them anymore (either through thinking or tests). So we want a finer granularity to identify and separate effects in the type system.</p>
+<p>Various tactics have emerged through the years to carry more information about those effects: Monad transformers, MTL, <code>freer-simple</code>, <code>fused-effects</code>, etc.</p>
+<p>And right now the new kid on the block is <a href="https://hackage.haskell.org/package/polysemy">Polysemy</a>.</p>
+<p>As the readme states, Polysemy requires much less boilerplate than other solutions, and has a zero-cost performance (starting with GHC 8.10). An additional benefit I love - surprisingly it is not mentioned in the readme - is it becomes a lot easier to mock effects, and thus test functions with effects!</p>
+<p>Let’s see how to get started with this new toy.</p>
+<h2 id="polysemy-basics">Polysemy basics</h2>
+<p>As <a href="https://github.com/polysemy-research/polysemy/issues/234">I discussed in an issue</a> I find the first Polysemy example quite complex and lacking explanations, which slowed me down in understanding how to make things work. I feel like code examples have more impact after a high level explanation of concepts. So here we go!</p>
+<p>A Polysemy effect consists of 3 pieces of code:</p>
+<h3 id="effect-declaration">1 - Effect declaration</h3>
+<p>This is where you describe the effect, its meaning, and what arguments need to be passed to “use” the effect in your business code.</p>
+<p>Examples:</p>
+<ul>
+<li>Access the database</li>
+<li>Log</li>
+<li>Read configuration</li>
+</ul>
+<h3 id="effect-uses">2 - Effect uses</h3>
+<p>These are the various places in your business code where you need to use the effect.</p>
+<p>Examples:</p>
+<ul>
+<li>Database
+<ul>
+<li>Select all users who play Squash</li>
+<li>Update user “Julien Debon” to change his favorite sport from Volley-ball to Squash</li>
+</ul></li>
+<li>Log
+<ul>
+<li>Log as DEBUG whenever a price modification occurs</li>
+<li>Log as ERROR when a payment fails</li>
+</ul></li>
+<li>Configuration
+<ul>
+<li>Read the <code>environment</code> property (dev / prod) to disable some features</li>
+<li>Check if the <code>bypassSecurity</code> property is set (automation tests)</li>
+</ul></li>
+</ul>
+<h3 id="effect-interpretation">3 - Effect interpretation</h3>
+<p>This is where you explain how an effect should be “converted” into a real action. Typically this is where <code>IO</code> occurs.</p>
+<p>Examples:</p>
+<ul>
+<li>Convert to a PostgreSQL query and send to the database pool</li>
+<li>Log to <code>stdout</code> or to a log file</li>
+<li>Read from the environment variables or a property file</li>
+</ul>
+<p>Now that we better grasp the idea of Polysemy effects, let’s start writing code! Head to <a href="polysemy-first-example.html">my next blog post</a> for a first, simple example.</p>
+]]></description>
+    <pubDate>Sat, 30 Nov 2019 00:00:00 UT</pubDate>
+    <guid>https://sir4ur0n.github.io/posts/intro-polysemy.html</guid>
+    <dc:creator>Julien Debon</dc:creator>
+</item>
+
+    </channel>
+</rss>
