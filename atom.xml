@@ -253,7 +253,13 @@ Cases: 1  Tried: 1  Errors: 0  Failures: 0</code></pre>
 <p>In case you are curious, let’s check the <strong>type</strong> of this <code>logInfo</code> function:</p>
 <pre><code>&gt; :type logInfo
 
-logInfo :: (IfStuck (IndexOf r (Found r Log)) (IfStuck r (TypeError ...) (Pure (TypeError ...))) NoErrorFcf, Find r Log, IndexOf r (Found r Log) ~ Log) =&gt; String -&gt; Sem r ()</code></pre>
+logInfo :: 
+   (IfStuck 
+      (IndexOf r (Found r Log)) 
+      (IfStuck r (TypeError ...) 
+      (Pure (TypeError ...))) NoErrorFcf, 
+   Find r Log, IndexOf r (Found r Log) ~ Log) 
+ =&gt; String -&gt; Sem r ()</code></pre>
 <p>You know what? Let’s pretend we never saw that. We don’t actually need to understand this (I don’t).</p>
 <p>What if we display <strong>information</strong> about this function instead?</p>
 <pre><code>&gt; :info logInfo
