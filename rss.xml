@@ -79,7 +79,7 @@ Cases: 1  Tried: 1  Errors: 0  Failures: 0</code></pre>
 <h3 id="step-3-test-effects-too">Step 3: Test effects too</h3>
 <p>Rather than silencing those logs, maybe logging is part of our requirements. In such case, we should actually check that the function logs correctly!</p>
 <p>Let’s replace our silencing interpreter with another one, that records all logs, so that we can check exactly what was logged. We will rely on another pre-existing Polysemy effect, namely <code>Polysemy.Writer</code>, which is the Polysemy equivalent of <code>Writer</code> or <code>WriterT</code>.</p>
-<p>Long story short, a <code>Writer a</code> effect allows you to <em>write</em> values of type <code>a</code> which will be appended together using <code>mappend</code> (thus the <code>Monoid</code> constraint). Note you can’t read those values as long as you are in code under this effect. Then when interpreting this effect, the result will be a pair of the resulting written <code>a</code> and the value returned by the effectful code. For our needs, <code>a ~ [String]</code>, i.e. we record each log and we will get the list of all logged lines when interpreting this <code>Writer [String]</code> effect:</p>
+<p>Long story short, a <code>Writer a</code> effect allows you to <em>write</em> values of type <code>a</code> which will be glued together using <code>mappend</code> (thus the <code>Monoid</code> constraint). Note you can’t read those values as long as you are in code under this effect. Then when interpreting this effect, the result will be a pair of the resulting written <code>a</code> and the value returned by the effectful code. For our needs, <code>a ~ [String]</code>, i.e. we record each log and we will get the list of all logged lines when interpreting this <code>Writer [String]</code> effect:</p>
 <div class="sourceCode" id="cb7"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb7-1"><a href="#cb7-1"></a><span class="kw">import</span> <span class="dt">Polysemy</span></span>
 <span id="cb7-2"><a href="#cb7-2"></a><span class="kw">import</span> <span class="dt">Polysemy.Writer</span></span>
 <span id="cb7-3"><a href="#cb7-3"></a></span>
@@ -121,11 +121,11 @@ Cases: 1  Tried: 1  Errors: 0  Failures: 0</code></pre>
 <span id="cb8-16"><a href="#cb8-16"></a>      myBusinessFunction a resultBC</span>
 <span id="cb8-17"><a href="#cb8-17"></a>   <span class="kw">in</span></span>
 <span id="cb8-18"><a href="#cb8-18"></a>    <span class="fu">last</span> logsAB_then_C <span class="op">==</span> <span class="fu">last</span> logsA_then_BC <span class="op">&amp;&amp;</span> resultAB_then_C <span class="op">==</span> resultA_then_BC</span></code></pre></div>
+<p>You can find the full code example on <a href="https://github.com/Sir4ur0n/blog/tree/master/code-examples/src/PolysemyTestsLogging">my Github repo</a>.</p>
 <p>This first example showed how to change the interpreter to mock/record the effect behavior, but a major part of mocking effects is to return a dummy value instead of executing the effect to retrieve the value (e.g. database access or environment variable).</p>
 <p>I think it’s interesting to showcase another example where the effect action has a return value other than <code>()</code>.</p>
-<p>You can find the full code example on <a href="https://github.com/Sir4ur0n/blog/tree/master/code-examples/src/PolysemyTestsLogging">my Github repo</a>.</p>
 <h2 id="intermediary-example-environment-variables">Intermediary example: environment variables</h2>
-<p>Let’s consider the use case of enviroment variable access.</p>
+<p>Let’s consider the use case of environment variable access.</p>
 <p>Many applications need to read some global configuration, often passed by Kubernetes/Rancher through environment variables or secret files. A database URL, the logging level, a port number, an API key, you name it.</p>
 <h3 id="the-effect-declaration">The effect declaration</h3>
 <div class="sourceCode" id="cb9"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb9-1"><a href="#cb9-1"></a><span class="kw">import</span> <span class="dt">Polysemy</span></span>
@@ -134,6 +134,7 @@ Cases: 1  Tried: 1  Errors: 0  Failures: 0</code></pre>
 <span id="cb9-4"><a href="#cb9-4"></a>  <span class="dt">ReadConf</span><span class="ot"> ::</span> <span class="dt">String</span> <span class="ot">-&gt;</span> <span class="dt">Configuration</span> m (<span class="dt">Maybe</span> <span class="dt">String</span>)</span>
 <span id="cb9-5"><a href="#cb9-5"></a></span>
 <span id="cb9-6"><a href="#cb9-6"></a>makeSem &#39;<span class="dt">&#39;Configuration</span></span></code></pre></div>
+<p>No surprise here. When you <code>readConf</code>, you have to pass the parameter name to read, and you get back a <code>Maybe String</code> (<code>Nothing</code> if the parameter is not configured).</p>
 <h3 id="the-effect-use-in-business-code">The effect use in business code</h3>
 <div class="sourceCode" id="cb10"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb10-1"><a href="#cb10-1"></a><span class="kw">import</span> <span class="dt">Data.Maybe</span></span>
 <span id="cb10-2"><a href="#cb10-2"></a><span class="kw">import</span> <span class="dt">Polysemy</span></span>
@@ -156,8 +157,8 @@ Cases: 1  Tried: 1  Errors: 0  Failures: 0</code></pre>
 <span id="cb11-4"><a href="#cb11-4"></a><span class="ot">confToIO ::</span> <span class="dt">Member</span> (<span class="dt">Embed</span> <span class="dt">IO</span>) r <span class="ot">=&gt;</span> <span class="dt">Sem</span> (<span class="dt">Configuration</span> &#39;<span class="op">:</span> r) a <span class="ot">-&gt;</span> <span class="dt">Sem</span> r a</span>
 <span id="cb11-5"><a href="#cb11-5"></a>confToIO <span class="ot">=</span> interpret (\(<span class="dt">ReadConf</span> envVarName) <span class="ot">-&gt;</span> embed <span class="op">$</span> lookupEnv envVarName)</span></code></pre></div>
 <p>Now let’s write a mock interpreter for our tests!</p>
-<p>As stated in introduction, mocking means that each test gets to decide the behavior of effects. In this particular case, it means the decision of how to convert the configuration name (e.g. <code>MINIMUM_AMOUNT</code>) to a value (of type <code>Maybe String</code>) is up to each test, not to the interpreter.</p>
-<p>Said differently, the interpreter should take as argument how to do this conversion.</p>
+<p>As stated in introduction, mocking means that each test gets to decide the behavior of effects. In this particular case, it means the decision of how to transform the configuration name (e.g. <code>MINIMUM_AMOUNT</code>) to a value (of type <code>Maybe String</code>) is up to each test, not to the interpreter.</p>
+<p>Said differently, the interpreter should take as argument how to do this transformation.</p>
 <p>In a functional language, it means: the interpreter should take as argument the function <code>String -&gt; Maybe String</code>, and each test should pass such a function (the mock behavior).</p>
 <div class="sourceCode" id="cb12"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb12-1"><a href="#cb12-1"></a><span class="ot">confToMock ::</span> (<span class="dt">String</span> <span class="ot">-&gt;</span> <span class="dt">Maybe</span> <span class="dt">String</span>) <span class="ot">-&gt;</span> <span class="dt">Sem</span> (<span class="dt">Configuration</span> &#39;<span class="op">:</span> r) a <span class="ot">-&gt;</span> <span class="dt">Sem</span> r a</span>
 <span id="cb12-2"><a href="#cb12-2"></a>confToMock mockLookupEnv <span class="ot">=</span> interpret (\(<span class="dt">ReadConf</span> envVarName) <span class="ot">-&gt;</span> <span class="fu">pure</span> <span class="op">$</span> mockLookupEnv envVarName)</span></code></pre></div>
