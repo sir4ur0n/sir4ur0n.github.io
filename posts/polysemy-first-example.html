@@ -39,33 +39,33 @@
 <li>Add <code>polysemy</code> and <code>polysemy-plugin</code> to our <code>package.yaml</code> <code>dependencies</code></li>
 <li>Add the following to <code>ghc-options</code>:</li>
 </ul>
-<div class="sourceCode" id="cb1"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true"></a><span class="kw">-</span><span class="at"> -fplugin=Polysemy.Plugin</span></span></code></pre></div>
+<div class="sourceCode" id="cb1"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">-</span><span class="at"> -fplugin=Polysemy.Plugin</span></span></code></pre></div>
 <ul>
 <li>Add the following to <code>default-extensions</code> (we also add <code>TemplateHaskell</code> because we use it to reduce boilerplate):</li>
 </ul>
-<div class="sourceCode" id="cb2"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true"></a><span class="kw">-</span><span class="at"> DataKinds</span></span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true"></a><span class="kw">-</span><span class="at"> FlexibleContexts</span></span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true"></a><span class="kw">-</span><span class="at"> GADTs</span></span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true"></a><span class="kw">-</span><span class="at"> LambdaCase</span></span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true"></a><span class="kw">-</span><span class="at"> PolyKinds</span></span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true"></a><span class="kw">-</span><span class="at"> RankNTypes</span></span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true"></a><span class="kw">-</span><span class="at"> ScopedTypeVariables</span></span>
-<span id="cb2-8"><a href="#cb2-8" aria-hidden="true"></a><span class="kw">-</span><span class="at"> TemplateHaskell</span></span>
-<span id="cb2-9"><a href="#cb2-9" aria-hidden="true"></a><span class="kw">-</span><span class="at"> TypeApplications</span></span>
-<span id="cb2-10"><a href="#cb2-10" aria-hidden="true"></a><span class="kw">-</span><span class="at"> TypeOperators</span></span>
-<span id="cb2-11"><a href="#cb2-11" aria-hidden="true"></a><span class="kw">-</span><span class="at"> TypeFamilies</span></span></code></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">-</span><span class="at"> DataKinds</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="kw">-</span><span class="at"> FlexibleContexts</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="kw">-</span><span class="at"> GADTs</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="kw">-</span><span class="at"> LambdaCase</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="kw">-</span><span class="at"> PolyKinds</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="kw">-</span><span class="at"> RankNTypes</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="kw">-</span><span class="at"> ScopedTypeVariables</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="kw">-</span><span class="at"> TemplateHaskell</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="kw">-</span><span class="at"> TypeApplications</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="kw">-</span><span class="at"> TypeOperators</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="kw">-</span><span class="at"> TypeFamilies</span></span></code></pre></div>
 <h2 id="logging">Logging</h2>
 <p>A common need in any application is logging. Whether it’s technical logs to keep track of batch start/end (and result), audit logs about who did an admin action, or functional logs about a particular feature being used, it’s useful to find what happened in our beloved applications.</p>
 <p>But logging is an effect! No matter if we send logs to standard output, a log file, or over the network, it has an effect on the world, other than mere processing.</p>
 <p>Of course we could use a good ol’ <code>IO</code> and call it a day, but as explained in the previous post, <code>IO</code> is too coarse, we want more granularity. Instead, let’s create and use a <code>Log</code> effect!</p>
 <h3 id="effect-declaration">Effect declaration</h3>
 <p>Let’s cut to the chase:</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true"></a><span class="kw">import</span> <span class="dt">Polysemy</span></span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true"></a></span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true"></a><span class="kw">data</span> <span class="dt">Log</span> m a <span class="kw">where</span></span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true"></a>  <span class="dt">LogInfo</span><span class="ot"> ::</span> <span class="dt">String</span> <span class="ot">-&gt;</span> <span class="dt">Log</span> m ()</span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true"></a></span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true"></a>makeSem '<span class="dt">'Log</span></span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="dt">Polysemy</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="kw">data</span> <span class="dt">Log</span> m a <span class="kw">where</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">LogInfo</span><span class="ot"> ::</span> <span class="dt">String</span> <span class="ot">-&gt;</span> <span class="dt">Log</span> m ()</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>makeSem '<span class="dt">'Log</span></span></code></pre></div>
 <p>This is pretty dense already, let’s analyze bit by bit what’s going on!</p>
 <p><code>data Log m a</code> is our effect.</p>
 <ul>
@@ -94,21 +94,21 @@ MemberWithError Log r =&gt; Text -&gt; Sem r ()</code></pre>
 <p>And that’s it! We have declared our logging effect. Remember, with effects, we split effect declaration and effect interpretation. This piece of code in no way explains <strong>how</strong> one should log. That is the whole point!</p>
 <h3 id="effect-use">Effect use</h3>
 <p>Now that we have created our logging effect, let’s use it in our business code! Let’s say we currently have this piece of code:</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true"></a><span class="ot">myBusinessFunction ::</span> <span class="dt">Integer</span> <span class="ot">-&gt;</span> <span class="dt">Integer</span> <span class="ot">-&gt;</span> <span class="dt">IO</span> <span class="dt">Integer</span></span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true"></a>myBusinessFunction m n <span class="ot">=</span> <span class="kw">do</span></span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true"></a>  <span class="fu">putStrLn</span> <span class="op">$</span> <span class="st">&quot;myBusinessFunction was called with parameters &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> m <span class="op">&lt;&gt;</span> </span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true"></a>             <span class="st">&quot; and &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> n</span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true"></a>  <span class="kw">let</span> result <span class="ot">=</span> m <span class="op">+</span> n</span>
-<span id="cb6-6"><a href="#cb6-6" aria-hidden="true"></a>  <span class="fu">putStrLn</span> <span class="op">$</span> <span class="st">&quot;myBusinessFunction result is &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> result</span>
-<span id="cb6-7"><a href="#cb6-7" aria-hidden="true"></a>  <span class="fu">pure</span> result</span></code></pre></div>
+<div class="sourceCode" id="cb6"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="ot">myBusinessFunction ::</span> <span class="dt">Integer</span> <span class="ot">-&gt;</span> <span class="dt">Integer</span> <span class="ot">-&gt;</span> <span class="dt">IO</span> <span class="dt">Integer</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>myBusinessFunction m n <span class="ot">=</span> <span class="kw">do</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">putStrLn</span> <span class="op">$</span> <span class="st">&quot;myBusinessFunction was called with parameters &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> m <span class="op">&lt;&gt;</span> </span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>             <span class="st">&quot; and &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> n</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> result <span class="ot">=</span> m <span class="op">+</span> n</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">putStrLn</span> <span class="op">$</span> <span class="st">&quot;myBusinessFunction result is &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> result</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">pure</span> result</span></code></pre></div>
 <p><code>IO</code> is too coarse, we want to replace its use with our shiny new effect. Fear not, my friend, this is as simple as:</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true"></a><span class="ot">myBusinessFunction ::</span> <span class="dt">Member</span> <span class="dt">Log</span> r <span class="ot">=&gt;</span> <span class="dt">Integer</span> <span class="ot">-&gt;</span> <span class="dt">Integer</span> <span class="ot">-&gt;</span> <span class="dt">Sem</span> r <span class="dt">Integer</span></span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true"></a>myBusinessFunction m n <span class="ot">=</span> <span class="kw">do</span></span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true"></a>  logInfo <span class="op">$</span> <span class="st">&quot;myBusinessFunction was called with parameters &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> m <span class="op">&lt;&gt;</span> </span>
-<span id="cb7-4"><a href="#cb7-4" aria-hidden="true"></a>            <span class="st">&quot; and &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> n</span>
-<span id="cb7-5"><a href="#cb7-5" aria-hidden="true"></a>  <span class="kw">let</span> result <span class="ot">=</span> m <span class="op">+</span> n</span>
-<span id="cb7-6"><a href="#cb7-6" aria-hidden="true"></a>  logInfo <span class="op">$</span> <span class="st">&quot;myBusinessFunction result is &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> result</span>
-<span id="cb7-7"><a href="#cb7-7" aria-hidden="true"></a>  <span class="fu">pure</span> result</span></code></pre></div>
+<div class="sourceCode" id="cb7"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="ot">myBusinessFunction ::</span> <span class="dt">Member</span> <span class="dt">Log</span> r <span class="ot">=&gt;</span> <span class="dt">Integer</span> <span class="ot">-&gt;</span> <span class="dt">Integer</span> <span class="ot">-&gt;</span> <span class="dt">Sem</span> r <span class="dt">Integer</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>myBusinessFunction m n <span class="ot">=</span> <span class="kw">do</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>  logInfo <span class="op">$</span> <span class="st">&quot;myBusinessFunction was called with parameters &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> m <span class="op">&lt;&gt;</span> </span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>            <span class="st">&quot; and &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> n</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> result <span class="ot">=</span> m <span class="op">+</span> n</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>  logInfo <span class="op">$</span> <span class="st">&quot;myBusinessFunction result is &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> result</span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">pure</span> result</span></code></pre></div>
 <p>The main changes are:</p>
 <ul>
 <li>the constraint <code>Member Log r</code> which tells that <code>r</code> must have <strong>at least</strong> the <code>Log</code> effect (because we will use it in our implementation)</li>
@@ -119,16 +119,16 @@ MemberWithError Log r =&gt; Text -&gt; Sem r ()</code></pre>
 <p>Now you might wonder “This is great, but at some point, somebody’s gotta do the actual logging with <code>putStrLn</code>!”.</p>
 <h3 id="effect-interpretation">Effect interpretation</h3>
 <p>This is where the real world catches on us. It’s time to explain how the <code>Log</code> effect must be interpreted in terms of <code>putStrLn</code>. Say the previous business code was consumed as such:</p>
-<div class="sourceCode" id="cb8"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true"></a><span class="ot">main ::</span> <span class="dt">IO</span> ()</span>
-<span id="cb8-2"><a href="#cb8-2" aria-hidden="true"></a>main <span class="ot">=</span> <span class="kw">do</span></span>
-<span id="cb8-3"><a href="#cb8-3" aria-hidden="true"></a>  m <span class="ot">&lt;- readLn ::</span> <span class="dt">IO</span> <span class="dt">Integer</span></span>
-<span id="cb8-4"><a href="#cb8-4" aria-hidden="true"></a>  n <span class="ot">&lt;- readLn ::</span> <span class="dt">IO</span> <span class="dt">Integer</span></span>
-<span id="cb8-5"><a href="#cb8-5" aria-hidden="true"></a>  result <span class="ot">&lt;-</span> myBusinessFunction m n</span>
-<span id="cb8-6"><a href="#cb8-6" aria-hidden="true"></a>  <span class="fu">putStrLn</span> <span class="op">$</span> <span class="st">&quot;The business result is &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> result</span></code></pre></div>
+<div class="sourceCode" id="cb8"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="ot">main ::</span> <span class="dt">IO</span> ()</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>main <span class="ot">=</span> <span class="kw">do</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>  m <span class="ot">&lt;- readLn ::</span> <span class="dt">IO</span> <span class="dt">Integer</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>  n <span class="ot">&lt;- readLn ::</span> <span class="dt">IO</span> <span class="dt">Integer</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>  result <span class="ot">&lt;-</span> myBusinessFunction m n</span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">putStrLn</span> <span class="op">$</span> <span class="st">&quot;The business result is &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> result</span></code></pre></div>
 <p>After the changes we did to <code>myBusinessFunction</code> this code no longer compiles, because <code>myBusinessFunction</code> works in the <code>Sem</code> monad while <code>main</code> works in the <code>IO</code> monad.</p>
 <p>First, let’s write a function to interpret the <code>Log</code> effect in terms of <code>IO</code>:</p>
-<div class="sourceCode" id="cb9"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true"></a><span class="ot">logToIO ::</span> <span class="dt">Member</span> (<span class="dt">Embed</span> <span class="dt">IO</span>) r <span class="ot">=&gt;</span> <span class="dt">Sem</span> (<span class="dt">Log</span> '<span class="op">:</span> r) a <span class="ot">-&gt;</span> <span class="dt">Sem</span> r a</span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true"></a>logToIO <span class="ot">=</span> interpret (\(<span class="dt">LogInfo</span> stringToLog) <span class="ot">-&gt;</span> embed <span class="op">$</span> <span class="fu">putStrLn</span> stringToLog)</span></code></pre></div>
+<div class="sourceCode" id="cb9"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="ot">logToIO ::</span> <span class="dt">Member</span> (<span class="dt">Embed</span> <span class="dt">IO</span>) r <span class="ot">=&gt;</span> <span class="dt">Sem</span> (<span class="dt">Log</span> '<span class="op">:</span> r) a <span class="ot">-&gt;</span> <span class="dt">Sem</span> r a</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>logToIO <span class="ot">=</span> interpret (\(<span class="dt">LogInfo</span> stringToLog) <span class="ot">-&gt;</span> embed <span class="op">$</span> <span class="fu">putStrLn</span> stringToLog)</span></code></pre></div>
 <p>There’s a lot going on! Don’t panic, as impressive as it may look the first time, you will soon get used to it.</p>
 <ul>
 <li>the <code>Member (Embed IO) r</code> constraint means <code>r</code> must have the ability to do <code>IO</code>. Ideally we would write <code>Member IO r</code> but since <code>IO</code> is not a Polysemy effect, we need to wrap it as an effect thanks to <code>Embed</code>. Note we require the <code>IO</code> effect because we want our main application to log using <code>putStrLn</code>. In our tests, we will write another interpreter with a pure function, thus we will not need to require the <code>IO</code> effect</li>
@@ -142,12 +142,12 @@ MemberWithError Log r =&gt; Text -&gt; Sem r ()</code></pre>
 <p>Again, this usually is the toughest part to grasp. Don’t worry if it takes time to sink in. Wash, rinse, repeat.</p>
 <p>Now we are able to convert a <code>Sem</code> monad with the <code>Log</code> effect to a <code>Sem</code> monad with the <code>Embed IO</code> effect. The last piece of the puzzle we need is to convert a <code>Sem</code> monad with <code>IO</code> to a good ol’ <code>IO</code>. Thankfully Polysemy already provides such a function, namely <code>runM</code>.</p>
 <p>Let’s head back to our <code>main</code> function and explain to the compiler (and the reader) how one is supposed to interpret those hippie effects back into motherland <code>IO</code>:</p>
-<div class="sourceCode" id="cb10"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true"></a><span class="ot">main ::</span> <span class="dt">IO</span> ()</span>
-<span id="cb10-2"><a href="#cb10-2" aria-hidden="true"></a>main <span class="ot">=</span> <span class="kw">do</span></span>
-<span id="cb10-3"><a href="#cb10-3" aria-hidden="true"></a>  m <span class="ot">&lt;- readLn ::</span> <span class="dt">IO</span> <span class="dt">Integer</span></span>
-<span id="cb10-4"><a href="#cb10-4" aria-hidden="true"></a>  n <span class="ot">&lt;- readLn ::</span> <span class="dt">IO</span> <span class="dt">Integer</span></span>
-<span id="cb10-5"><a href="#cb10-5" aria-hidden="true"></a>  result <span class="ot">&lt;-</span> runM <span class="op">.</span> logToIO <span class="op">$</span> myBusinessFunction m n</span>
-<span id="cb10-6"><a href="#cb10-6" aria-hidden="true"></a>  <span class="fu">putStrLn</span> <span class="op">$</span> <span class="st">&quot;The business result is &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> result</span></code></pre></div>
+<div class="sourceCode" id="cb10"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="ot">main ::</span> <span class="dt">IO</span> ()</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>main <span class="ot">=</span> <span class="kw">do</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>  m <span class="ot">&lt;- readLn ::</span> <span class="dt">IO</span> <span class="dt">Integer</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>  n <span class="ot">&lt;- readLn ::</span> <span class="dt">IO</span> <span class="dt">Integer</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>  result <span class="ot">&lt;-</span> runM <span class="op">.</span> logToIO <span class="op">$</span> myBusinessFunction m n</span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">putStrLn</span> <span class="op">$</span> <span class="st">&quot;The business result is &quot;</span> <span class="op">&lt;&gt;</span> <span class="fu">show</span> result</span></code></pre></div>
 <p>That’s it, our code was successfully migrated from monolithic effect <code>IO</code> to fine-grained <code>Log</code> effect! The additional noise is negligible and the benefit is already interesting, but the benefits increase tenfold in “real” applications with several effects, several actions per effect, several business functions calling each other, reinterpretations, and tests.</p>
 <p>In <a href="polysemy-tests.html">my next blog post</a>, I explain how to write tests for business functions with Polysemy effects.</p>
 <p>You can find the full code example on <a href="https://github.com/Sir4ur0n/blog/tree/master/code-examples/src/PolysemyFirstExample">my Github repo</a>.</p>
